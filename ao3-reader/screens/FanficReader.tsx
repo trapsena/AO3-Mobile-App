@@ -6,7 +6,7 @@ import ChapterControls from "../components/ChapterControls";
 
 type ChapterLink = { href: string; text: string };
 
-const WORK_URL = "https://archiveofourown.org/works/24627550/chapters/59498248"; // exemplo
+const WORK_URL = "https://archiveofourown.org/works/68204906"; // exemplo
 
 // 🧠 Script injetado no AO3
 const INJECTED_JS = `
@@ -62,6 +62,12 @@ const INJECTED_JS = `
   }
 
   setTimeout(() => {
+    // 1. Tenta encontrar e remover o cabeçalho indesejado ANTES de pegar o conteúdo
+    const headingToRemove = document.querySelector('h3.heading#work.landmark');
+    if (headingToRemove) {
+      headingToRemove.remove(); // Remove o elemento do DOM
+      console.log("✅ Cabeçalho removido antes da extração.");
+    }
     const contentEl = document.querySelector('.userstuff.module')
       || document.querySelector('#chapters .chapter')
       || document.querySelector('.workskin .userstuff.module')
