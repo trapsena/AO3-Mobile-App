@@ -4,6 +4,24 @@ import { WebView, WebViewMessageEvent } from "react-native-webview";
 import ChapterView from "../components/ChapterView";
 import ChapterControls from "../components/ChapterControls";
 
+// ✅ WebView oculta — o estilo absoluto agora está no View wrapper
+const HiddenWebView = React.forwardRef((props: any, ref: any) => (
+  <View
+    style={{
+      position: "absolute",
+      top: -9999,
+      left: -9999,
+      width: 1,
+      height: 1,
+      opacity: 0.01,
+      flex: 0,
+    }}
+  >
+    <WebView {...props} ref={ref} />
+  </View>
+));
+HiddenWebView.displayName = "DataExtractorWebView";
+
 type ChapterLink = { href: string; text: string };
 
 const WORK_URL = "https://archiveofourown.org/works/68204906"; // exemplo
@@ -15,7 +33,6 @@ const INJECTED_JS = `
     if (!href) return null;
     if (/^https?:\\/\\//i.test(href)) return href;
 
-    // ✅ Se for só o número (ex: "59498302"), reconstruímos a URL completa
     if (/^\\d+$/.test(href)) {
       const workIdMatch = window.location.pathname.match(/works\\/(\\d+)/);
       const workId = workIdMatch ? workIdMatch[1] : null;
@@ -24,7 +41,6 @@ const INJECTED_JS = `
       }
     }
 
-    // ✅ Corrige o problema de falta de barra
     if (href.startsWith("/")) {
       return "https://archiveofourown.org" + href;
     } else {
@@ -62,10 +78,9 @@ const INJECTED_JS = `
   }
 
   setTimeout(() => {
-    // 1. Tenta encontrar e remover o cabeçalho indesejado ANTES de pegar o conteúdo
     const headingToRemove = document.querySelector('h3.heading#work.landmark');
     if (headingToRemove) {
-      headingToRemove.remove(); // Remove o elemento do DOM
+      headingToRemove.remove();
       console.log("✅ Cabeçalho removido antes da extração.");
     }
     const contentEl = document.querySelector('.userstuff.module')
@@ -96,7 +111,6 @@ const INJECTED_JS = `
 true;
 `;
 
-
 const FanficReader: React.FC = () => {
   const webRef = useRef<WebView | null>(null);
   const [currentUrl, setCurrentUrl] = useState<string>(WORK_URL);
@@ -105,7 +119,6 @@ const FanficReader: React.FC = () => {
   const [chapterLinks, setChapterLinks] = useState<ChapterLink[]>([]);
   const [index, setIndex] = useState<number>(0);
 
-  // Atualiza estado quando muda o link
   useEffect(() => {
     setLoading(true);
     setContentHtml("");
@@ -117,7 +130,6 @@ const FanficReader: React.FC = () => {
       if (data.type === "pageData") {
         console.log("📖 Recebido:", data.debug);
 
-        // Só atualiza lista se tiver links novos
         if (Array.isArray(data.links) && data.links.length > 0) {
           setChapterLinks(data.links);
         }
@@ -136,7 +148,6 @@ const FanficReader: React.FC = () => {
     }
   };
 
-  // Botões de navegação
   const goPrev = () => {
     if (index > 0 && chapterLinks[index - 1]) {
       setIndex(index - 1);
@@ -165,17 +176,21 @@ const FanficReader: React.FC = () => {
       )}
 
       <ChapterView htmlContent={contentHtml} />
-      <ChapterControls index={index} total={chapterLinks.length || 0} onPrev={goPrev} onNext={goNext} />
+      <ChapterControls
+        index={index}
+        total={chapterLinks.length || 0}
+        onPrev={goPrev}
+        onNext={goNext}
+      />
 
-      {/* WebView oculta apenas pra pegar o HTML */}
-      <WebView
+      {/* ✅ WebView agora invisível de verdade */}
+      <HiddenWebView
         ref={(r) => (webRef.current = r)}
         source={{ uri: currentUrl }}
         injectedJavaScript={INJECTED_JS}
         onMessage={handleMessage}
         onLoadEnd={() => {
           console.log("🔁 Página carregada:", currentUrl);
-          // reexecuta script depois de carregar
           setTimeout(() => webRef.current?.injectJavaScript(INJECTED_JS), 300);
           setLoading(false);
         }}
@@ -184,7 +199,6 @@ const FanficReader: React.FC = () => {
         javaScriptEnabled
         domStorageEnabled
         mixedContentMode="always"
-        style={{ width: 0, height: 0 }}
       />
     </View>
   );

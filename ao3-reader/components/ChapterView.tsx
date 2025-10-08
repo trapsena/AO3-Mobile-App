@@ -21,7 +21,7 @@ const ChapterView: React.FC<Props> = ({ htmlContent }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 15 },
+  container: { flex: 1, padding: 20 },
   text: { color: "white", fontSize: 16, lineHeight: 24 },
 });
 
