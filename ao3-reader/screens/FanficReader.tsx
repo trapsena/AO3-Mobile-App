@@ -1,10 +1,25 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, ActivityIndicator, Alert, StyleSheet } from "react-native";
+import {
+  View,
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  Modal,
+} from "react-native";
+import Slider from "@react-native-community/slider";
 import { WebView, WebViewMessageEvent } from "react-native-webview";
 import ChapterView from "../components/ChapterView";
 import ChapterControls from "../components/ChapterControls";
+import { Ionicons } from "@expo/vector-icons";
+import ReaderHeader from "../components/ReaderHeader";
+import SpeechControls from "../components/SpeechControls";
 
-// ✅ WebView oculta — o estilo absoluto agora está no View wrapper
+
+
+
+// ✅ WebView oculta
 const HiddenWebView = React.forwardRef((props: any, ref: any) => (
   <View
     style={{
@@ -24,28 +39,21 @@ HiddenWebView.displayName = "DataExtractorWebView";
 
 type ChapterLink = { href: string; text: string };
 
-const WORK_URL = "https://archiveofourown.org/works/68204906"; // exemplo
+const WORK_URL = "https://archiveofourown.org/works/56407438/chapters/143327242"; // exemplo
 
-// 🧠 Script injetado no AO3
+// Script para coletar conteúdo e capítulos
 const INJECTED_JS = `
 (function() {
   function abs(href) {
     if (!href) return null;
     if (/^https?:\\/\\//i.test(href)) return href;
-
     if (/^\\d+$/.test(href)) {
       const workIdMatch = window.location.pathname.match(/works\\/(\\d+)/);
       const workId = workIdMatch ? workIdMatch[1] : null;
-      if (workId) {
-        return "https://archiveofourown.org/works/" + workId + "/chapters/" + href;
-      }
+      if (workId) return "https://archiveofourown.org/works/" + workId + "/chapters/" + href;
     }
-
-    if (href.startsWith("/")) {
-      return "https://archiveofourown.org" + href;
-    } else {
-      return "https://archiveofourown.org/" + href;
-    }
+    if (href.startsWith("/")) return "https://archiveofourown.org" + href;
+    return "https://archiveofourown.org/" + href;
   }
 
   function getChapterLinks() {
@@ -59,86 +67,101 @@ const INJECTED_JS = `
     if (links.length === 0) {
       const els = document.querySelectorAll('ol.chapter a, #chapter_index a, .chapter_list a, .chapters a');
       Array.from(els).forEach(a => {
-        if (a.getAttribute('href')) {
-          links.push({ href: abs(a.getAttribute('href')), text: (a.textContent || '').trim() });
-        }
+        if (a.getAttribute('href')) links.push({ href: abs(a.getAttribute('href')), text: (a.textContent || '').trim() });
       });
     }
-
     const seen = new Set();
-    const unique = links.filter(l => {
+    return links.filter(l => {
       if (!l.href) return false;
       if (seen.has(l.href)) return false;
       seen.add(l.href);
       return true;
     });
-
-    console.log("📚 Capítulos encontrados:", unique);
-    return unique;
   }
 
   setTimeout(() => {
-    const headingToRemove = document.querySelector('h3.heading#work.landmark');
-    if (headingToRemove) {
-      headingToRemove.remove();
-      console.log("✅ Cabeçalho removido antes da extração.");
-    }
     const contentEl = document.querySelector('.userstuff.module')
       || document.querySelector('#chapters .chapter')
       || document.querySelector('.workskin .userstuff.module')
       || document.querySelector('.workskin')
       || document.querySelector('[id^="chapter-"]');
-
     const contentHtml = contentEl ? contentEl.innerHTML : null;
     const title = (document.querySelector('h2.title') && document.querySelector('h2.title').innerText)
       || document.title
       || '';
     const links = getChapterLinks();
+    const currentOption = document.querySelector('select#selected_id option:checked');
+    const chapterTitle = currentOption ? currentOption.textContent.trim() : title;
 
     window.ReactNativeWebView.postMessage(JSON.stringify({
       type: 'pageData',
-      title: title,
+      title,
+      chapterTitle,
       content: contentHtml,
-      links: links,
-      debug: {
-        url: window.location.href,
-        foundLinks: links.length,
-        foundContent: !!contentEl
-      }
+      links,
     }));
-  }, 250);
+  }, 300);
 })();
 true;
 `;
 
 const FanficReader: React.FC = () => {
-  const webRef = useRef<WebView | null>(null);
-  const [currentUrl, setCurrentUrl] = useState<string>(WORK_URL);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [contentHtml, setContentHtml] = useState<string>("");
+  const webRef = useRef<any>(null);
+  const [currentUrl, setCurrentUrl] = useState(WORK_URL);
+  const [loading, setLoading] = useState(true);
+  const [contentHtml, setContentHtml] = useState("");
+  const [rawContentHtml, setRawContentHtml] = useState("");
   const [chapterLinks, setChapterLinks] = useState<ChapterLink[]>([]);
-  const [index, setIndex] = useState<number>(0);
+  const [index, setIndex] = useState(0);
+  const [title, setTitle] = useState("");
+  const [chapterTitle, setChapterTitle] = useState("");
+
+  // ⚙️ Reader settings
+  const [fontSize, setFontSize] = useState(16);
+  const [lineHeight, setLineHeight] = useState(24);
+  const [padding, setPadding] = useState(20);
+  const [configVisible, setConfigVisible] = useState(false);
+  // TTS / leitura
+  const [ttsVisible, setTtsVisible] = useState(false);
+  const [paragraphs, setParagraphs] = useState<string[]>([]);
+  const [paragraphSpacing, setParagraphSpacing] = useState(12);
+  const [currentTtsIndex, setCurrentTtsIndex] = useState(0);
 
   useEffect(() => {
     setLoading(true);
     setContentHtml("");
   }, [currentUrl]);
 
+  // Extrai parágrafos simples do HTML para leitura (fallback sem cheerio)
+  useEffect(() => {
+    if (contentHtml) {
+      const regex = /<p[^>]*>(.*?)<\/p>/gis;
+      const ps: string[] = [];
+      let m: RegExpExecArray | null;
+      while ((m = regex.exec(contentHtml)) !== null) {
+        let inner = m[1].replace(/<[^>]+>/g, "").trim();
+        if (inner.length > 0) ps.push(inner);
+      }
+      setParagraphs(ps);
+    } else {
+      setParagraphs([]);
+    }
+  }, [contentHtml]);
+
+  // NOTE: highlighting is now handled inside the visible WebView (ChapterView)
+
   const handleMessage = (e: WebViewMessageEvent) => {
     try {
       const data = JSON.parse(e.nativeEvent.data);
       if (data.type === "pageData") {
-        console.log("📖 Recebido:", data.debug);
-
-        if (Array.isArray(data.links) && data.links.length > 0) {
+        if (data.title) setTitle(data.title);
+        if (data.chapterTitle) setChapterTitle(data.chapterTitle);
+        if (Array.isArray(data.links) && data.links.length > 0)
           setChapterLinks(data.links);
-        }
-
         if (data.content) {
-          const wrapped = `<div style="color:#fff; line-height:1.6;">${data.content}</div>`;
-          setContentHtml(wrapped);
-        } else {
-          setContentHtml("<p>❌ Conteúdo não encontrado.</p>");
+          // store raw content (without wrapper) so we can rebuild highlighted variants
+          setRawContentHtml(data.content);
+          setContentHtml(`<div style="color:#fff; line-height:1.6;">${data.content}</div>`);
         }
       }
     } catch (err) {
@@ -154,7 +177,6 @@ const FanficReader: React.FC = () => {
       setCurrentUrl(chapterLinks[index - 1].href);
     }
   };
-
   const goNext = () => {
     if (index < chapterLinks.length - 1 && chapterLinks[index + 1]) {
       setIndex(index + 1);
@@ -162,40 +184,60 @@ const FanficReader: React.FC = () => {
     }
   };
 
-  const handleError = (syntheticEvent: any) => {
-    const { nativeEvent } = syntheticEvent;
-    console.warn("❌ WebView error:", nativeEvent);
-    Alert.alert("Erro de rede", `Falha ao carregar: ${nativeEvent.description || nativeEvent}`);
-    setLoading(false);
-  };
-
   return (
     <View style={styles.container}>
-      {loading && (
-        <ActivityIndicator size="large" color="#fff" style={{ marginTop: 40 }} />
-      )}
-
-      <ChapterView htmlContent={contentHtml} />
-      <ChapterControls
-        index={index}
-        total={chapterLinks.length || 0}
-        onPrev={goPrev}
-        onNext={goNext}
+      {/* Header componentizado */}
+      <ReaderHeader
+        fanficTitle={title}
+        chapterTitle={chapterTitle}
+        fontSize={fontSize}
+        lineSpacing={lineHeight}
+        paragraphSpacing={paragraphSpacing}
+        padding={padding}
+        onConfigChange={(cfg) => {
+          if (cfg.fontSize !== undefined) setFontSize(cfg.fontSize);
+          if (cfg.lineSpacing !== undefined) setLineHeight(cfg.lineSpacing);
+          if (cfg.padding !== undefined) setPadding(cfg.padding);
+          if (cfg.paragraphSpacing !== undefined) setParagraphSpacing(cfg.paragraphSpacing);
+        }}
+        onToggleTts={() => setTtsVisible((v) => !v)}
+        isTtsActive={ttsVisible}
       />
 
-      {/* ✅ WebView agora invisível de verdade */}
+      {loading && <ActivityIndicator size="large" color="#fff" style={{ marginTop: 40 }} />}
+
+      <ChapterView
+        htmlContent={rawContentHtml}
+        key={`${fontSize}-${lineHeight}-${padding}`}
+        fontSize={fontSize}
+        lineHeight={lineHeight}
+        paragraphSpacing={paragraphSpacing}
+        padding={padding}
+        currentIndex={currentTtsIndex}
+        onParagraphPress={(i) => {
+          // sync paragraph click with TTS index and open controls if closed
+          setCurrentTtsIndex(i);
+          if (!ttsVisible) setTtsVisible(true);
+        }}
+      />
+
+      {/* Controles — alterna entre leitura e navegação */}
+      {ttsVisible ? (
+        <SpeechControls paragraphs={paragraphs} index={currentTtsIndex} onIndexChange={(i) => setCurrentTtsIndex(i)} onClose={() => setTtsVisible(false)} />
+      ) : (
+        <ChapterControls index={index} total={chapterLinks.length || 0} onPrev={goPrev} onNext={goNext} />
+      )}
+
+      {/* ReaderConfigModal moved into ReaderHeader; kept for backwards compatibility but hidden */}
+
+
+      {/* WebView oculta */}
       <HiddenWebView
-        ref={(r) => (webRef.current = r)}
+        ref={webRef}
         source={{ uri: currentUrl }}
         injectedJavaScript={INJECTED_JS}
         onMessage={handleMessage}
-        onLoadEnd={() => {
-          console.log("🔁 Página carregada:", currentUrl);
-          setTimeout(() => webRef.current?.injectJavaScript(INJECTED_JS), 300);
-          setLoading(false);
-        }}
-        onError={handleError}
-        originWhitelist={["*"]}
+        onLoadEnd={() => webRef.current?.injectJavaScript(INJECTED_JS)}
         javaScriptEnabled
         domStorageEnabled
         mixedContentMode="always"
@@ -206,6 +248,33 @@ const FanficReader: React.FC = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 16,
+    backgroundColor: "#111",
+    borderBottomColor: "#333",
+    borderBottomWidth: 1,
+  },
+  title: { color: "#fff", fontSize: 16, fontWeight: "bold" },
+  subtitle: { color: "#aaa", fontSize: 14 },
+  modal: {
+    flex: 1,
+    backgroundColor: "#111",
+    padding: 20,
+    justifyContent: "center",
+  },
+  modalTitle: { color: "#fff", fontSize: 20, marginBottom: 20, textAlign: "center" },
+  label: { color: "#fff", marginTop: 15 },
+  closeBtn: {
+    marginTop: 30,
+    backgroundColor: "#333",
+    padding: 10,
+    alignItems: "center",
+    borderRadius: 8,
+  },
+  closeText: { color: "#fff", fontSize: 16 },
 });
 
 export default FanficReader;
