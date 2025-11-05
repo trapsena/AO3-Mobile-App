@@ -15,6 +15,7 @@ import ChapterControls from "../components/ChapterControls";
 import { Ionicons } from "@expo/vector-icons";
 import ReaderHeader from "../components/ReaderHeader";
 import SpeechControls from "../components/SpeechControls";
+import { fetchWithSession, getSessionCookie } from "../api/ao3Auth";
 
 
 
@@ -44,6 +45,14 @@ const WORK_URL = "https://archiveofourown.org/works/56407438/chapters/143327242"
 // Script para coletar conteúdo e capítulos
 const INJECTED_JS = `
 (function() {
+  // Disable pinch-zoom by ensuring a viewport meta that forbids scaling.
+  try {
+    (function(){
+      var meta = document.querySelector('meta[name="viewport"]');
+      if(!meta){ meta = document.createElement('meta'); meta.name = 'viewport'; document.head.appendChild(meta); }
+      meta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no');
+    })();
+  } catch(e) { /* ignore */ }
   function abs(href) {
     if (!href) return null;
     if (/^https?:\\/\\//i.test(href)) return href;
@@ -127,9 +136,66 @@ const FanficReader: React.FC = () => {
   const [paragraphSpacing, setParagraphSpacing] = useState(12);
   const [currentTtsIndex, setCurrentTtsIndex] = useState(0);
 
+  // When the chapter URL changes try to fetch it using the logged-in session.
+  // If fetching with session fails or doesn't yield the chapter body, fall back
+  // to the hidden WebView extraction (which works for public pages).
   useEffect(() => {
-    setLoading(true);
-    setContentHtml("");
+    let cancelled = false;
+    const extractContent = (html: string): string | null => {
+      if (!html) return null;
+      // Try several AO3 selectors in order. Regex is a pragmatic fallback.
+      const patterns = [
+        /<div[^>]*class=(?:"|')?[^"'<>]*userstuff[^"'<>]*module[^"'<>]*?(?:"|')?[^>]*>([\s\S]*?)<\/div>/i,
+        /<div[^>]*id=(?:"|')?chapters(?:"|')?[^>]*>([\s\S]*?)<\/div>/i,
+        /<div[^>]*class=(?:"|')?[^"'<>]*workskin[^"'<>]*?(?:"|')?[^>]*>([\s\S]*?)<\/div>/i,
+        /<div[^>]*id=(?:"|')?chapter-[^"'<>]+(?:"|')?[^>]*>([\s\S]*?)<\/div>/i,
+      ];
+      for (const p of patterns) {
+        const m = html.match(p);
+        if (m && m[1]) return m[1];
+      }
+      return null;
+    };
+
+    (async () => {
+      setLoading(true);
+      setContentHtml("");
+      setRawContentHtml("");
+
+      try {
+        const res = await fetchWithSession(currentUrl);
+        if (res && res.ok) {
+          const html = await res.text();
+          const inner = extractContent(html);
+          if (inner) {
+            console.log('[FanficReader] fetchWithSession succeeded, extracted content for', currentUrl);
+            if (cancelled) return;
+            setRawContentHtml(inner);
+            setContentHtml(`<div style="color:#fff; line-height:1.6;">${inner}</div>`);
+            setLoading(false);
+            return;
+          }
+        }
+      } catch (err) {
+        // fetchWithSession might fail (no session or network). We'll fallback to webview
+        console.warn("fetchWithSession failed, falling back to WebView extraction:", err);
+      }
+
+      // fallback: let the hidden WebView load the page and postMessage back
+      try {
+        // trigger a reload of the hidden webview; it will post pageData via handleMessage
+        webRef.current?.reload?.();
+      } catch (e) {
+        // ignore
+      }
+
+      // keep loader until the webview posts pageData
+      // setLoading will be cleared in handleMessage
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [currentUrl]);
 
   // Extrai parágrafos simples do HTML para leitura (fallback sem cheerio)
@@ -150,16 +216,37 @@ const FanficReader: React.FC = () => {
 
   // NOTE: highlighting is now handled inside the visible WebView (ChapterView)
 
+  // Log session token and chapter metadata each time a chapter is rendered/loaded.
+  // This helps debugging to confirm which session is being used for fetchWithSession.
+  useEffect(() => {
+    (async () => {
+      try {
+        const cookie = await getSessionCookie();
+        const m = cookie ? cookie.match(/_otwarchive_session=([^;]+)/) : null;
+        const token = m ? m[1] : cookie ?? null;
+        console.log("[FanficReader] Chapter rendered.", {
+          index,
+          chapterTitle,
+          currentUrl,
+          sessionToken: token,
+        });
+      } catch (err) {
+        console.log("[FanficReader] Could not read session token", err);
+      }
+    })();
+  }, [currentUrl, index, chapterTitle, rawContentHtml]);
+
   const handleMessage = (e: WebViewMessageEvent) => {
     try {
       const data = JSON.parse(e.nativeEvent.data);
+      console.log('[FanficReader] handleMessage received:', data && data.type);
       if (data.type === "pageData") {
         if (data.title) setTitle(data.title);
         if (data.chapterTitle) setChapterTitle(data.chapterTitle);
-        if (Array.isArray(data.links) && data.links.length > 0)
-          setChapterLinks(data.links);
+        if (Array.isArray(data.links) && data.links.length > 0) setChapterLinks(data.links);
         if (data.content) {
           // store raw content (without wrapper) so we can rebuild highlighted variants
+          console.log('[FanficReader] HiddenWebView posted chapter content (length):', data.content ? data.content.length : 0);
           setRawContentHtml(data.content);
           setContentHtml(`<div style="color:#fff; line-height:1.6;">${data.content}</div>`);
         }
@@ -173,14 +260,20 @@ const FanficReader: React.FC = () => {
 
   const goPrev = () => {
     if (index > 0 && chapterLinks[index - 1]) {
-      setIndex(index - 1);
-      setCurrentUrl(chapterLinks[index - 1].href);
+      const newIndex = index - 1;
+      const newUrl = chapterLinks[newIndex].href;
+      console.log('[FanficReader] goPrev ->', { from: index, to: newIndex, url: newUrl });
+      setIndex(newIndex);
+      setCurrentUrl(newUrl);
     }
   };
   const goNext = () => {
     if (index < chapterLinks.length - 1 && chapterLinks[index + 1]) {
-      setIndex(index + 1);
-      setCurrentUrl(chapterLinks[index + 1].href);
+      const newIndex = index + 1;
+      const newUrl = chapterLinks[newIndex].href;
+      console.log('[FanficReader] goNext ->', { from: index, to: newIndex, url: newUrl });
+      setIndex(newIndex);
+      setCurrentUrl(newUrl);
     }
   };
 
