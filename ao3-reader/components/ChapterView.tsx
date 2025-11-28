@@ -31,12 +31,15 @@ const ChapterView: React.FC<Props> = ({
   // Build full HTML with CSS and a small script to handle highlighting and clicks
   const buildHtml = () => {
     const css = `
-      body{ color:#fff; background:#000; font-size:${fontSize}px; line-height:${lineHeight}px; padding:${padding}px; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow-x: hidden; }
+      body { color:#fff; background:#000; font-size:${fontSize}px; line-height:${lineHeight}px; padding:${padding}px; overflow-y: auto; }
       p{ margin-bottom:${paragraphSpacing}px; }
       p.current{ outline:2px solid rgba(76,209,55,0.25); padding:6px; background-color: rgba(76,209,55,0.04); }
       em,i{ font-style:italic; }
       strong,b{ font-weight:700; }
       hr{ height:1px; background:#444; border:none; margin:${paragraphSpacing}px 0; }
+      * { -webkit-touch-callout: none; touch-action: pan-y; }
     `;
 
     const script = `
@@ -105,9 +108,14 @@ const ChapterView: React.FC<Props> = ({
         ref={webRef}
         originWhitelist={["*"]}
         source={{ html }}
-        style={{ width }}
+        style={{ width, flex: 1 }}
         javaScriptEnabled
         domStorageEnabled
+        scrollEnabled={true}
+        bounces={false}
+        overScrollMode="never"
+        showsVerticalScrollIndicator={true}
+        showsHorizontalScrollIndicator={false}
         onMessage={(e) => {
           try {
             const data = JSON.parse(e.nativeEvent.data);

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { View, TouchableOpacity, Text, StyleSheet } from "react-native";
 import * as Speech from "expo-speech";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 
 interface Props {
@@ -11,19 +12,50 @@ interface Props {
   onIndexChange?: (i: number) => void;
 }
 
+interface TTSSettings {
+  language: string;
+  rate: number;
+  pitch: number;
+}
+
+const TTS_SETTINGS_KEY = "tts_settings";
+
 const SpeechControls: React.FC<Props> = ({ paragraphs, onClose, index, onIndexChange }) => {
   const [internalIndex, setInternalIndex] = useState(0);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [ttsSettings, setTtsSettings] = useState<TTSSettings>({
+    language: "pt-BR",
+    rate: 1.0,
+    pitch: 1.0,
+  });
   const currentIndex = typeof index === "number" ? index : internalIndex;
   const playingRef = React.useRef(false);
 
-  // Fala o parágrafo atual
+  // Load TTS settings on mount
+  useEffect(() => {
+    loadTTSSettings();
+  }, []);
+
+  const loadTTSSettings = async () => {
+    try {
+      const saved = await AsyncStorage.getItem(TTS_SETTINGS_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setTtsSettings(parsed);
+        console.log("[SpeechControls] Loaded TTS settings:", parsed);
+      }
+    } catch (err) {
+      console.warn("[SpeechControls] Error loading TTS settings:", err);
+    }
+  };
+
+  // Fala o parágrafo atual com as configurações salvas
   const speak = (text: string, opts?: { onDone?: () => void }) => {
     Speech.stop();
     Speech.speak(text, {
-      language: "pt-BR",
-      rate: 1.0,
-      pitch: 1.0,
+      language: ttsSettings.language,
+      rate: ttsSettings.rate,
+      pitch: ttsSettings.pitch,
       onDone: opts?.onDone ?? (() => setIsSpeaking(false)),
     });
     setIsSpeaking(true);
@@ -54,9 +86,9 @@ const SpeechControls: React.FC<Props> = ({ paragraphs, onClose, index, onIndexCh
     // speak and onDone continue if still playing
     Speech.stop();
     Speech.speak(txt, {
-      language: "pt-BR",
-      rate: 1.0,
-      pitch: 1.0,
+      language: ttsSettings.language,
+      rate: ttsSettings.rate,
+      pitch: ttsSettings.pitch,
       onDone: () => {
         if (playingRef.current && i < paragraphs.length - 1) {
           // small delay to avoid race conditions

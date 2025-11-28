@@ -40,7 +40,7 @@ HiddenWebView.displayName = "DataExtractorWebView";
 
 type ChapterLink = { href: string; text: string };
 
-const WORK_URL = "https://archiveofourown.org/works/56407438/chapters/143327242"; // exemplo
+const WORK_URL = "https://archiveofourown.org/works/68204906/chapters/177910986"; // exemplo
 
 // Script para coletar conteúdo e capítulos
 const INJECTED_JS = `
@@ -287,6 +287,7 @@ const FanficReader: React.FC = () => {
         lineSpacing={lineHeight}
         paragraphSpacing={paragraphSpacing}
         padding={padding}
+        currentUrl={currentUrl}
         onConfigChange={(cfg) => {
           if (cfg.fontSize !== undefined) setFontSize(cfg.fontSize);
           if (cfg.lineSpacing !== undefined) setLineHeight(cfg.lineSpacing);
