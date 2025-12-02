@@ -20,7 +20,7 @@ Um aplicativo desenvolvido em **React Native (Expo)** que atua como um wrapper i
 
 ### Público-Alvo
 
-Leitores ávidos de fanfics que desejam uma experiência de leitura mais confortável, customizável e acessível em dispositivos móveis.
+Leitores ávidos de fanfics que desejam uma experiência de leitura mais confortável (Eu mesmo :P).
 
 ### Escopo do MVP (Minimum Viable Product)
 
@@ -175,3 +175,4 @@ Este projeto é desenvolvido para fins educacionais e de portfólio.
 Todo o conteúdo acessado pelo aplicativo pertence aos seus respectivos criadores e ao Archive of Our Own (OTW).
 
 Icons by [Lucide](https://lucide.dev/).
+
