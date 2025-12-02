@@ -8,11 +8,13 @@ import {
   Dimensions,
   ScrollView,
   ActivityIndicator,
+  TextInput,
 } from "react-native";
 import Slider from "@react-native-community/slider";
 import * as Speech from "expo-speech";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { X } from "lucide-react-native";
+import type { TTSProvider } from "./geminiTTS";
 
 interface ReaderConfigModalProps {
   visible: boolean;
@@ -26,9 +28,12 @@ interface ReaderConfigModalProps {
 }
 
 interface TTSSettings {
+  provider: TTSProvider;
   language: string;
   rate: number;
   pitch: number;
+  geminiApiKey?: string;
+  geminiVoice?: string;
 }
 
 interface Voice {
@@ -39,6 +44,15 @@ interface Voice {
 
 const SCREEN_HEIGHT = Dimensions.get("window").height;
 const TTS_SETTINGS_KEY = "tts_settings";
+
+const GEMINI_VOICES = [
+  "Zephyr",
+  "Puck",
+  "Charon",
+  "Kore",
+  "Fenrir",
+  "Aoede",
+];
 
 const ReaderConfigModal: React.FC<ReaderConfigModalProps> = ({
   visible,
@@ -55,12 +69,13 @@ const ReaderConfigModal: React.FC<ReaderConfigModalProps> = ({
   const [voices, setVoices] = useState<Voice[]>([]);
   const [loadingVoices, setLoadingVoices] = useState(false);
   const [ttsSettings, setTtsSettings] = useState<TTSSettings>({
+    provider: "expo",
     language: "pt-BR",
     rate: 1.0,
     pitch: 1.0,
+    geminiVoice: "Zephyr",
   });
 
-  // Load voices and TTS settings when modal becomes visible
   useEffect(() => {
     if (visible) {
       loadVoicesAndSettings();
@@ -68,21 +83,36 @@ const ReaderConfigModal: React.FC<ReaderConfigModalProps> = ({
   }, [visible]);
 
   const loadVoicesAndSettings = async () => {
-    setLoadingVoices(true);
     try {
-      // Load saved TTS settings
       const saved = await AsyncStorage.getItem(TTS_SETTINGS_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        setTtsSettings(parsed);
+        const loadedSettings = {
+          provider: parsed.provider || "expo",
+          language: parsed.language || "pt-BR",
+          rate: parsed.rate || 1.0,
+          pitch: parsed.pitch || 1.0,
+          geminiApiKey: parsed.geminiApiKey,
+          geminiVoice: parsed.geminiVoice || "Zephyr",
+        };
+        setTtsSettings(loadedSettings);
+        
+        // Só carrega as vozes se for Expo Speech
+        if (loadedSettings.provider === "expo") {
+          setLoadingVoices(true);
+          const availableVoices = await Speech.getAvailableVoicesAsync();
+          setVoices(availableVoices as Voice[]);
+          setLoadingVoices(false);
+        }
+      } else {
+        // Primeira vez - carregar vozes do Expo
+        setLoadingVoices(true);
+        const availableVoices = await Speech.getAvailableVoicesAsync();
+        setVoices(availableVoices as Voice[]);
+        setLoadingVoices(false);
       }
-
-      // Load available voices
-      const availableVoices = await Speech.getAvailableVoicesAsync();
-      setVoices(availableVoices as Voice[]);
     } catch (err) {
       console.warn("[ReaderConfigModal] Error loading voices or settings:", err);
-    } finally {
       setLoadingVoices(false);
     }
   };
@@ -93,6 +123,24 @@ const ReaderConfigModal: React.FC<ReaderConfigModalProps> = ({
       setTtsSettings(settings);
     } catch (err) {
       console.warn("[ReaderConfigModal] Error saving TTS settings:", err);
+    }
+  };
+
+  const handleProviderChange = async (provider: TTSProvider) => {
+    const updated = { ...ttsSettings, provider };
+    saveTTSSettings(updated);
+    
+    // Carregar vozes do Expo quando trocar para ele
+    if (provider === "expo" && voices.length === 0) {
+      setLoadingVoices(true);
+      try {
+        const availableVoices = await Speech.getAvailableVoicesAsync();
+        setVoices(availableVoices as Voice[]);
+      } catch (err) {
+        console.warn("[ReaderConfigModal] Error loading voices:", err);
+      } finally {
+        setLoadingVoices(false);
+      }
     }
   };
 
@@ -111,6 +159,16 @@ const ReaderConfigModal: React.FC<ReaderConfigModalProps> = ({
     saveTTSSettings(updated);
   };
 
+  const handleGeminiApiKeyChange = (apiKey: string) => {
+    const updated = { ...ttsSettings, geminiApiKey: apiKey };
+    saveTTSSettings(updated);
+  };
+
+  const handleGeminiVoiceChange = (voice: string) => {
+    const updated = { ...ttsSettings, geminiVoice: voice };
+    saveTTSSettings(updated);
+  };
+
   useEffect(() => {
     Animated.timing(translateY, {
       toValue: visible ? 0 : SCREEN_HEIGHT,
@@ -121,7 +179,6 @@ const ReaderConfigModal: React.FC<ReaderConfigModalProps> = ({
 
   return (
     <>
-      {/* Overlay escuro */}
       {visible && (
         <TouchableOpacity
           style={styles.overlay}
@@ -130,7 +187,6 @@ const ReaderConfigModal: React.FC<ReaderConfigModalProps> = ({
         />
       )}
 
-      {/* Bottom Sheet */}
       <Animated.View
         style={[
           styles.sheet,
@@ -170,7 +226,6 @@ const ReaderConfigModal: React.FC<ReaderConfigModalProps> = ({
         <ScrollView
           style={styles.contentContainer}
           showsVerticalScrollIndicator={false}
-          scrollEnabled={activeTab === "tts" && voices.length > 5}
         >
           {activeTab === "text" && (
             <>
@@ -212,6 +267,45 @@ const ReaderConfigModal: React.FC<ReaderConfigModalProps> = ({
 
           {activeTab === "tts" && (
             <>
+              {/* Provider Selection - SEMPRE VISÍVEL */}
+              <View style={styles.section}>
+                <Text style={styles.label}>Motor de TTS</Text>
+                <View style={styles.providerContainer}>
+                  <TouchableOpacity
+                    style={[
+                      styles.providerButton,
+                      ttsSettings.provider === "expo" && styles.providerButtonActive,
+                    ]}
+                    onPress={() => handleProviderChange("expo")}
+                  >
+                    <Text
+                      style={[
+                        styles.providerButtonText,
+                        ttsSettings.provider === "expo" && styles.providerButtonTextActive,
+                      ]}
+                    >
+                      Expo Speech
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.providerButton,
+                      ttsSettings.provider === "gemini" && styles.providerButtonActive,
+                    ]}
+                    onPress={() => handleProviderChange("gemini")}
+                  >
+                    <Text
+                      style={[
+                        styles.providerButtonText,
+                        ttsSettings.provider === "gemini" && styles.providerButtonTextActive,
+                      ]}
+                    >
+                      Gemini TTS
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
               {loadingVoices ? (
                 <View style={styles.loadingContainer}>
                   <ActivityIndicator size="large" color="#fff" />
@@ -219,62 +313,119 @@ const ReaderConfigModal: React.FC<ReaderConfigModalProps> = ({
                 </View>
               ) : (
                 <>
-                  {/* Language / Voice Selection */}
-                  <View style={styles.section}>
-                    <Text style={styles.label}>Linguagem / Voz</Text>
-                    <ScrollView style={styles.voicesContainer} horizontal showsHorizontalScrollIndicator={false}>
-                      {voices.length > 0 ? (
-                        voices.map((voice) => (
-                          <TouchableOpacity
-                            key={voice.identifier}
-                            style={[
-                              styles.voiceButton,
-                              ttsSettings.language === voice.language && styles.voiceButtonActive,
-                            ]}
-                            onPress={() => handleLanguageChange(voice.language)}
-                          >
-                            <Text
+                  {/* Expo Speech Settings */}
+                  {ttsSettings.provider === "expo" && (
+                    <>
+                      <View style={styles.section}>
+                        <Text style={styles.label}>Linguagem / Voz</Text>
+                        <ScrollView 
+                          style={styles.voicesContainer} 
+                          horizontal 
+                          showsHorizontalScrollIndicator={false}
+                        >
+                          {voices.length > 0 ? (
+                            voices.map((voice) => (
+                              <TouchableOpacity
+                                key={voice.identifier}
+                                style={[
+                                  styles.voiceButton,
+                                  ttsSettings.language === voice.language && styles.voiceButtonActive,
+                                ]}
+                                onPress={() => handleLanguageChange(voice.language)}
+                              >
+                                <Text
+                                  style={[
+                                    styles.voiceButtonText,
+                                    ttsSettings.language === voice.language && styles.voiceButtonTextActive,
+                                  ]}
+                                  numberOfLines={1}
+                                >
+                                  {voice.language}
+                                </Text>
+                              </TouchableOpacity>
+                            ))
+                          ) : (
+                            <Text style={styles.noVoicesText}>Nenhuma voz disponível</Text>
+                          )}
+                        </ScrollView>
+                      </View>
+
+                      <View style={styles.section}>
+                        <Text style={styles.label}>Velocidade: {ttsSettings.rate.toFixed(2)}</Text>
+                        <Slider
+                          minimumValue={0.5}
+                          maximumValue={2.0}
+                          step={0.1}
+                          value={ttsSettings.rate}
+                          onValueChange={handleRateChange}
+                          minimumTrackTintColor="#fff"
+                        />
+                      </View>
+
+                      <View style={styles.section}>
+                        <Text style={styles.label}>Tom: {ttsSettings.pitch.toFixed(2)}</Text>
+                        <Slider
+                          minimumValue={0.5}
+                          maximumValue={2.0}
+                          step={0.1}
+                          value={ttsSettings.pitch}
+                          onValueChange={handlePitchChange}
+                          minimumTrackTintColor="#fff"
+                        />
+                      </View>
+                    </>
+                  )}
+
+                  {/* Gemini TTS Settings */}
+                  {ttsSettings.provider === "gemini" && (
+                    <>
+                      <View style={styles.section}>
+                        <Text style={styles.label}>API Key do Gemini</Text>
+                        <TextInput
+                          style={styles.input}
+                          value={ttsSettings.geminiApiKey || ""}
+                          onChangeText={handleGeminiApiKeyChange}
+                          placeholder="AIza..."
+                          placeholderTextColor="#666"
+                          secureTextEntry
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                        />
+                        <Text style={styles.hint}>
+                          Obtenha sua chave em: aistudio.google.com
+                        </Text>
+                      </View>
+
+                      <View style={styles.section}>
+                        <Text style={styles.label}>Voz do Gemini</Text>
+                        <ScrollView 
+                          style={styles.voicesContainer} 
+                          horizontal 
+                          showsHorizontalScrollIndicator={false}
+                        >
+                          {GEMINI_VOICES.map((voice) => (
+                            <TouchableOpacity
+                              key={voice}
                               style={[
-                                styles.voiceButtonText,
-                                ttsSettings.language === voice.language && styles.voiceButtonTextActive,
+                                styles.voiceButton,
+                                ttsSettings.geminiVoice === voice && styles.voiceButtonActive,
                               ]}
-                              numberOfLines={1}
+                              onPress={() => handleGeminiVoiceChange(voice)}
                             >
-                              {voice.language}
-                            </Text>
-                          </TouchableOpacity>
-                        ))
-                      ) : (
-                        <Text style={styles.noVoicesText}>Nenhuma voz disponível</Text>
-                      )}
-                    </ScrollView>
-                  </View>
-
-                  {/* Rate */}
-                  <View style={styles.section}>
-                    <Text style={styles.label}>Velocidade (Rate): {ttsSettings.rate.toFixed(2)}</Text>
-                    <Slider
-                      minimumValue={0.5}
-                      maximumValue={2.0}
-                      step={0.1}
-                      value={ttsSettings.rate}
-                      onValueChange={handleRateChange}
-                      minimumTrackTintColor="#fff"
-                    />
-                  </View>
-
-                  {/* Pitch */}
-                  <View style={styles.section}>
-                    <Text style={styles.label}>Tom (Pitch): {ttsSettings.pitch.toFixed(2)}</Text>
-                    <Slider
-                      minimumValue={0.5}
-                      maximumValue={2.0}
-                      step={0.1}
-                      value={ttsSettings.pitch}
-                      onValueChange={handlePitchChange}
-                      minimumTrackTintColor="#fff"
-                    />
-                  </View>
+                              <Text
+                                style={[
+                                  styles.voiceButtonText,
+                                  ttsSettings.geminiVoice === voice && styles.voiceButtonTextActive,
+                                ]}
+                              >
+                                {voice}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      </View>
+                    </>
+                  )}
                 </>
               )}
             </>
@@ -312,7 +463,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
   },
-  // Tabs
   tabsContainer: {
     flexDirection: "row",
     borderBottomWidth: 1,
@@ -338,7 +488,6 @@ const styles = StyleSheet.create({
   activeTabText: {
     color: "#4dd0e1",
   },
-  // Content
   contentContainer: {
     maxHeight: SCREEN_HEIGHT * 0.6,
   },
@@ -351,7 +500,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
   },
-  // Loading
   loadingContainer: {
     alignItems: "center",
     justifyContent: "center",
@@ -362,7 +510,31 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 14,
   },
-  // Voices
+  providerContainer: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  providerButton: {
+    flex: 1,
+    backgroundColor: "#222",
+    borderWidth: 1,
+    borderColor: "#333",
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  providerButtonActive: {
+    backgroundColor: "#4dd0e1",
+    borderColor: "#4dd0e1",
+  },
+  providerButtonText: {
+    color: "#999",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  providerButtonTextActive: {
+    color: "#000",
+  },
   voicesContainer: {
     marginHorizontal: -5,
     paddingHorizontal: 5,
@@ -393,6 +565,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: "center",
     paddingVertical: 10,
+  },
+  input: {
+    backgroundColor: "#222",
+    borderWidth: 1,
+    borderColor: "#333",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: "#fff",
+    fontSize: 14,
+  },
+  hint: {
+    color: "#666",
+    fontSize: 12,
+    marginTop: 6,
+    fontStyle: "italic",
   },
 });
 
