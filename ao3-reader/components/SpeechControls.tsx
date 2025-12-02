@@ -1,47 +1,61 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { View, TouchableOpacity, Text, StyleSheet } from "react-native";
-import * as Speech from "expo-speech";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
+import { TTSServiceFactory, TTSSettings } from "./geminiTTS";
 
 interface Props {
   paragraphs: string[];
   onClose: () => void;
-  // optional controlled index and callback so parent can highlight current paragraph
   index?: number;
   onIndexChange?: (i: number) => void;
 }
 
-interface TTSSettings {
-  language: string;
-  rate: number;
-  pitch: number;
-}
-
 const TTS_SETTINGS_KEY = "tts_settings";
 
-const SpeechControls: React.FC<Props> = ({ paragraphs, onClose, index, onIndexChange }) => {
+const SpeechControls: React.FC<Props> = ({ 
+  paragraphs, 
+  onClose, 
+  index, 
+  onIndexChange 
+}) => {
   const [internalIndex, setInternalIndex] = useState(0);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [ttsSettings, setTtsSettings] = useState<TTSSettings>({
+    provider: "expo",
     language: "pt-BR",
     rate: 1.0,
     pitch: 1.0,
+    geminiVoice: "Zephyr",
   });
+  
   const currentIndex = typeof index === "number" ? index : internalIndex;
-  const playingRef = React.useRef(false);
+  const playingRef = useRef(false);
+  const ttsServiceRef = useRef(TTSServiceFactory.getService(ttsSettings));
 
   // Load TTS settings on mount
   useEffect(() => {
     loadTTSSettings();
   }, []);
 
+  // Update TTS service when settings change
+  useEffect(() => {
+    ttsServiceRef.current = TTSServiceFactory.getService(ttsSettings);
+  }, [ttsSettings]);
+
   const loadTTSSettings = async () => {
     try {
       const saved = await AsyncStorage.getItem(TTS_SETTINGS_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        setTtsSettings(parsed);
+        setTtsSettings({
+          provider: parsed.provider || "expo",
+          language: parsed.language || "pt-BR",
+          rate: parsed.rate || 1.0,
+          pitch: parsed.pitch || 1.0,
+          geminiApiKey: parsed.geminiApiKey,
+          geminiVoice: parsed.geminiVoice || "Zephyr",
+        });
         console.log("[SpeechControls] Loaded TTS settings:", parsed);
       }
     } catch (err) {
@@ -49,55 +63,45 @@ const SpeechControls: React.FC<Props> = ({ paragraphs, onClose, index, onIndexCh
     }
   };
 
-  // Fala o parágrafo atual com as configurações salvas
-  const speak = (text: string, opts?: { onDone?: () => void }) => {
-    Speech.stop();
-    Speech.speak(text, {
-      language: ttsSettings.language,
-      rate: ttsSettings.rate,
-      pitch: ttsSettings.pitch,
-      onDone: opts?.onDone ?? (() => setIsSpeaking(false)),
-    });
+  const speak = async (text: string, onDone?: () => void) => {
+    const service = ttsServiceRef.current;
+    await service.stop();
     setIsSpeaking(true);
+    
+    await service.speak(text, () => {
+      setIsSpeaking(false);
+      onDone?.();
+    });
   };
 
-  // Speak a paragraph and optionally continue to the next paragraphs until the end
-  const speakContinuously = (i: number) => {
+  const speakContinuously = async (i: number) => {
     if (!paragraphs || i >= paragraphs.length) {
       setIsSpeaking(false);
       playingRef.current = false;
       return;
     }
 
-    // notify parent of index (so highlight updates)
     notifyIndex(i);
 
     const txt = paragraphs[i] ?? "";
     if (!txt) {
-      // advance to next
       speakContinuously(i + 1);
       return;
     }
 
-    // mark as playing
     playingRef.current = true;
     setIsSpeaking(true);
 
-    // speak and onDone continue if still playing
-    Speech.stop();
-    Speech.speak(txt, {
-      language: ttsSettings.language,
-      rate: ttsSettings.rate,
-      pitch: ttsSettings.pitch,
-      onDone: () => {
-        if (playingRef.current && i < paragraphs.length - 1) {
-          // small delay to avoid race conditions
-          setTimeout(() => speakContinuously(i + 1), 80);
-        } else {
-          setIsSpeaking(false);
-          playingRef.current = false;
-        }
-      },
+    const service = ttsServiceRef.current;
+    await service.stop();
+    
+    await service.speak(txt, () => {
+      if (playingRef.current && i < paragraphs.length - 1) {
+        setTimeout(() => speakContinuously(i + 1), 80);
+      } else {
+        setIsSpeaking(false);
+        playingRef.current = false;
+      }
     });
   };
 
@@ -106,45 +110,54 @@ const SpeechControls: React.FC<Props> = ({ paragraphs, onClose, index, onIndexCh
     else setInternalIndex(i);
   };
 
-  const handlePlayPause = () => {
+  const handlePlayPause = async () => {
+    const service = ttsServiceRef.current;
+    
     if (isSpeaking) {
-      // pause/stop
       playingRef.current = false;
-      Speech.stop();
+      await service.stop();
       setIsSpeaking(false);
     } else {
-      // start continuous reading from currentIndex
-      speakContinuously(currentIndex);
+      await speakContinuously(currentIndex);
     }
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (currentIndex < paragraphs.length - 1) {
       const next = currentIndex + 1;
-      // stop any continuous play, then speak the next paragraph (single)
       playingRef.current = false;
-      Speech.stop();
+      
+      const service = ttsServiceRef.current;
+      await service.stop();
+      
       notifyIndex(next);
       const txt = paragraphs[next];
-      if (txt) speak(txt, { onDone: () => setIsSpeaking(false) });
+      if (txt) {
+        await speak(txt, () => setIsSpeaking(false));
+      }
     }
   };
 
-  const handlePrev = () => {
+  const handlePrev = async () => {
     if (currentIndex > 0) {
       const prev = currentIndex - 1;
       playingRef.current = false;
-      Speech.stop();
+      
+      const service = ttsServiceRef.current;
+      await service.stop();
+      
       notifyIndex(prev);
       const txt = paragraphs[prev];
-      if (txt) speak(txt, { onDone: () => setIsSpeaking(false) });
+      if (txt) {
+        await speak(txt, () => setIsSpeaking(false));
+      }
     }
   };
 
   useEffect(() => {
     return () => {
-      // call but don't return the promise from cleanup
-      Speech.stop();
+      const service = ttsServiceRef.current;
+      service.stop();
     };
   }, []);
 
