@@ -105,27 +105,24 @@ class GeminiTTSService implements TTSServiceInterface {
     try {
       this._isSpeaking = true;
       
-      console.log("[GeminiTTS] Making request to Gemini API...");
+      console.log("[GeminiTTS] Making request to Google Cloud TTS API...");
       
-      // Fazer requisição para Gemini TTS API
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${this.settings.geminiApiKey}`, {
+      // Usar Google Cloud Text-to-Speech API (mais estável)
+      const response = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${this.settings.geminiApiKey}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          contents: [{
-            parts: [{ text }]
-          }],
-          generationConfig: {
-            responseModalities: ["AUDIO"],
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: {
-                  voiceName: this.settings.geminiVoice || "Zephyr",
-                }
-              }
-            }
+          input: { text },
+          voice: {
+            languageCode: this.settings.language || "pt-BR",
+            name: this.getGoogleVoiceName(),
+          },
+          audioConfig: {
+            audioEncoding: "MP3",
+            speakingRate: this.settings.rate || 1.0,
+            pitch: this.settings.pitch || 1.0,
           }
         }),
       });
@@ -133,25 +130,80 @@ class GeminiTTSService implements TTSServiceInterface {
       if (!response.ok) {
         const errorText = await response.text();
         console.error("[GeminiTTS] API Error Response:", errorText);
-        throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+        throw new Error(`Google TTS API error: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
       console.log("[GeminiTTS] Response received");
       
-      // Extrair áudio da resposta
-      const audioData = this.extractAudioFromResponse(data);
+      // O áudio vem em data.audioContent como base64
+      const audioData = data.audioContent;
       if (!audioData) {
         throw new Error("No audio data in response");
       }
 
-      // Salvar temporariamente e reproduzir
+      // Reproduzir o áudio
       await this.playAudioData(audioData, onDone);
 
     } catch (error) {
       console.error("[GeminiTTS] Error:", error);
       this._isSpeaking = false;
       onDone?.();
+    }
+  }
+
+  private getGoogleVoiceName(): string {
+    // Mapear as vozes do Gemini para vozes do Google Cloud TTS
+    const voiceMap: Record<string, string> = {
+      "Zephyr": "pt-BR-Neural2-A",
+      "Puck": "pt-BR-Neural2-B",
+      "Charon": "pt-BR-Neural2-C",
+      "Kore": "pt-BR-Wavenet-A",
+      "Fenrir": "pt-BR-Wavenet-B",
+      "Aoede": "pt-BR-Wavenet-C",
+    };
+    
+    const geminiVoice = this.settings.geminiVoice || "Puck";
+    return voiceMap[geminiVoice] || "pt-BR-Neural2-A";
+  }
+
+  private extractAudioFromSSE(sseText: string): string | null {
+    try {
+      // O SSE vem no formato:
+      // data: {"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"...","data":"..."}}]}}]}
+      
+      const lines = sseText.split('\n');
+      let allAudioData = '';
+      
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const jsonStr = line.substring(6); // Remove "data: "
+          if (jsonStr.trim() === '[DONE]') continue;
+          
+          try {
+            const data = JSON.parse(jsonStr);
+            const candidates = data.candidates;
+            
+            if (!candidates || candidates.length === 0) continue;
+            
+            const parts = candidates[0].content?.parts;
+            if (!parts || parts.length === 0) continue;
+            
+            for (const part of parts) {
+              if (part.inlineData?.data) {
+                allAudioData += part.inlineData.data;
+              }
+            }
+          } catch (e) {
+            // Ignorar linhas inválidas
+          }
+        }
+      }
+      
+      return allAudioData || null;
+    } catch (error) {
+      console.error("[GeminiTTS] Error extracting audio from SSE:", error);
+      return null;
     }
   }
 
@@ -179,7 +231,8 @@ class GeminiTTSService implements TTSServiceInterface {
   private async playAudioData(base64Audio: string, onDone?: () => void): Promise<void> {
     try {
       // Criar data URI diretamente do base64
-      const dataUri = `data:audio/wav;base64,${base64Audio}`;
+      // Google Cloud TTS retorna MP3
+      const dataUri = `data:audio/mp3;base64,${base64Audio}`;
 
       // Criar e carregar som
       const { sound } = await Audio.Sound.createAsync(
