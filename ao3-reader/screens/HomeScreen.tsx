@@ -1,6 +1,7 @@
 import React from "react";
 import { View, StyleSheet, TouchableOpacity, Text, Linking } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import AO3ListingScreen from "./AO3ListingScreen";
 
 interface Props {
   username: string | null;
@@ -18,9 +19,6 @@ const HomeScreen: React.FC<Props> = ({ username, onLogout }) => {
 
   const profileUrl = `https://archiveofourown.org/users/${encodeURIComponent(username)}`;
 
-  // Log the username (we only use GET to find the name; we don't render the profile page inside the app)
-  console.log("[HomeScreen] Username available (profile not rendered):", { username, profileUrl });
-
   const handleLogout = async () => {
     await onLogout();
   };
@@ -35,22 +33,29 @@ const HomeScreen: React.FC<Props> = ({ username, onLogout }) => {
 
   return (
     <View style={styles.container}>
-      {/* Header com botão de logout */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>{username}</Text>
-        <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
-          <Ionicons name="log-out" size={24} color="#fff" />
-        </TouchableOpacity>
+        <View style={styles.headerTextBlock}>
+          <Text style={styles.headerLabel}>Signed in as</Text>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {username}
+          </Text>
+        </View>
+
+        <View style={styles.headerActions}>
+          <TouchableOpacity onPress={openInBrowser} style={styles.iconBtn}>
+            <Ionicons name="open-outline" size={22} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleLogout} style={styles.iconBtn}>
+            <Ionicons name="log-out" size={22} color="#f66" />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      <View style={styles.body}>
-        <Text style={styles.text}>Conectado como</Text>
-        <Text style={styles.username}>{username}</Text>
-
-        <TouchableOpacity style={styles.openBtn} onPress={openInBrowser}>
-          <Text style={styles.openBtnText}>Abrir perfil no navegador</Text>
-        </TouchableOpacity>
-      </View>
+      <AO3ListingScreen
+        url={profileUrl}
+        title={`${username}'s AO3 dashboard`}
+        showHeader={false}
+      />
     </View>
   );
 };
@@ -70,42 +75,27 @@ const styles = StyleSheet.create({
     borderBottomColor: "#333",
     borderBottomWidth: 1,
   },
+  headerTextBlock: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  headerLabel: {
+    color: "#9a9a9a",
+    fontSize: 12,
+    marginBottom: 2,
+  },
   headerTitle: {
     color: "#fff",
     fontSize: 18,
     fontWeight: "bold",
   },
-  logoutBtn: {
-    padding: 8,
-  },
-  webview: {
-    flex: 1,
-  },
-  loader: {
-    marginTop: 40,
-  },
-  body: {
-    flex: 1,
+  headerActions: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 20,
+    gap: 10,
   },
-  username: {
-    color: "#fff",
-    fontSize: 20,
-    marginTop: 8,
-    fontWeight: "600",
-  },
-  openBtn: {
-    marginTop: 20,
-    backgroundColor: "#333",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 6,
-  },
-  openBtnText: {
-    color: "#fff",
-    fontSize: 14,
+  iconBtn: {
+    padding: 8,
   },
   text: {
     color: "#fff",

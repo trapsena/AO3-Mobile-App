@@ -40,7 +40,7 @@ HiddenWebView.displayName = "DataExtractorWebView";
 
 type ChapterLink = { href: string; text: string };
 
-const WORK_URL = "https://archiveofourown.org/works/68204906/chapters/177910986"; // exemplo
+const WORK_URL = "https://archiveofourown.org/works/47843671/chapters/120616627"; // exemplo
 
 // Script para coletar conteúdo e capítulos
 const INJECTED_JS = `
