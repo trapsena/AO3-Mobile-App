@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  FlatList,
   SafeAreaView,
+  SectionList,
   StyleSheet,
   Text,
   View,
@@ -435,6 +435,18 @@ const LISTING_INJECTED_JS = `
       deduped.push(group);
     });
 
+    // For now, only surface the "Recent Bookmarks" group — the page also
+    // renders a full "Bookmarks" listing which duplicates most of the same
+    // items and was what looked like the list "reloading" after itself.
+    var recentOnly = deduped.filter(function(group) {
+      return /recent\\s+bookmarks?/i.test(group.title || "");
+    });
+
+    if (recentOnly.length) return recentOnly;
+
+    // Fallback: title text didn't match (page markup may differ). Rather
+    // than silently show nothing, fall back to everything and log why.
+    console.warn("[AO3ListingScreen] No group titled like 'Recent Bookmarks' found; showing all groups. Titles seen:", deduped.map(function(g) { return g.title; }));
     return deduped;
   }
 
@@ -459,6 +471,7 @@ true;
 
 const AO3ListingScreen: React.FC<Props> = ({ url, title, showHeader = true, onGroupsLoaded, onItemPress }) => {
   const webRef = useRef<any>(null);
+  const lastPayloadRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [pageTitle, setPageTitle] = useState(title || "");
   const [groups, setGroups] = useState<AO3ListingGroup[]>([]);
@@ -490,10 +503,32 @@ const AO3ListingScreen: React.FC<Props> = ({ url, title, showHeader = true, onGr
     };
   }, [url]);
 
-  const data = useMemo(() => groups, [groups]);
+  const sections = useMemo(
+    () => groups.map((group) => ({ key: group.key, title: group.title, data: group.items })),
+    [groups],
+  );
+
+  const itemsById = useMemo(() => {
+    const map = new Map<string, AO3ListingItem>();
+    groups.forEach((group) => {
+      group.items.forEach((entry) => map.set(entry.id, entry));
+    });
+    return map;
+  }, [groups]);
+
+  const handlePressWork = useCallback(
+    (data: AO3WorkBlurbData | AO3BookmarkData) => {
+      const entry = itemsById.get(String(data.id));
+      if (entry) onItemPress?.(entry);
+    },
+    [itemsById, onItemPress],
+  );
 
   const handleMessage = (e: WebViewMessageEvent) => {
     try {
+      if (e.nativeEvent.data === lastPayloadRef.current) return;
+      lastPayloadRef.current = e.nativeEvent.data;
+
       const payload = JSON.parse(e.nativeEvent.data);
       if (payload.type === "listingData") {
         setPageTitle(payload.pageTitle || title || "");
@@ -529,27 +564,28 @@ const AO3ListingScreen: React.FC<Props> = ({ url, title, showHeader = true, onGr
           <Text style={styles.loadingText}>Reading blurbs...</Text>
         </View>
       ) : (
-        <FlatList
-          data={data}
-          keyExtractor={(item) => item.key}
+        <SectionList
+          sections={sections}
+          keyExtractor={(item, index) => item.id || String(index)}
           contentContainerStyle={styles.listContent}
-          renderItem={({ item }) => (
-            <View style={styles.groupCard}>
-              <Text style={styles.groupTitle}>{item.title}</Text>
-              <View style={styles.itemStack}>
-                {item.items.map((entry) => (
-                  <View key={entry.id} style={styles.blurbWrap}>
-                  <AO3WorkBlurb
-                      kind={entry.kind}
-                      work={entry.work}
-                      bookmark={entry.bookmark}
-                      onPressWork={onItemPress ? () => onItemPress(entry) : undefined}
-                    />
-                  </View>
-                ))}
-              </View>
+          stickySectionHeadersEnabled={false}
+          renderSectionHeader={({ section }) => (
+            <Text style={styles.groupTitle}>{section.title}</Text>
+          )}
+          renderItem={({ item: entry }) => (
+            <View style={styles.blurbWrap}>
+              <AO3WorkBlurb
+                kind={entry.kind}
+                work={entry.work}
+                bookmark={entry.bookmark}
+                onPressWork={onItemPress ? handlePressWork : undefined}
+              />
             </View>
           )}
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          windowSize={7}
+          removeClippedSubviews
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Text style={styles.emptyTitle}>No blurbs found</Text>
@@ -566,7 +602,6 @@ const AO3ListingScreen: React.FC<Props> = ({ url, title, showHeader = true, onGr
         source={sourceHtml ? { html: sourceHtml, baseUrl: url } : { uri: url }}
         injectedJavaScript={LISTING_INJECTED_JS}
         onMessage={handleMessage}
-        onLoadEnd={() => webRef.current?.injectJavaScript(LISTING_INJECTED_JS)}
         javaScriptEnabled
         domStorageEnabled
         mixedContentMode="always"
@@ -611,16 +646,11 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 16,
   },
-  groupCard: {
-    gap: 12,
-  },
   groupTitle: {
     color: "#7ec14b",
     fontSize: 16,
     fontWeight: "700",
-  },
-  itemStack: {
-    gap: 12,
+    marginBottom: 4,
   },
   blurbWrap: {
     width: "100%",
