@@ -15,7 +15,7 @@ import AO3WorkBlurb, {
   AO3WorkBlurbData,
 } from "../components/AO3WorkBlurb";
 
-const HiddenWebView = React.forwardRef((props: any, ref: any) => (
+const HiddenWebView = React.forwardRef<any, any>((props, ref) => (
   <View
     style={{
       position: "absolute",
@@ -308,6 +308,7 @@ const LISTING_INJECTED_JS = `
     var fandomLinks = collectTags(root, ["h5.fandoms a.tag", ".fandoms a.tag"]);
     var commaTags = collectCommaTags(root);
     var required = collectRequired(root);
+    var stats = collectStats(root);
     var className = statusIconNode ? statusIconNode.className : (statusSlot ? statusSlot.className : "");
     var fullClassName = className || "";
     var spriteClassName = (fullClassName && fullClassName.split(/\s+/).filter(Boolean).find(function(cls) {
@@ -340,6 +341,15 @@ const LISTING_INJECTED_JS = `
           relationships: commaTags.relationships.length ? commaTags.relationships.map(function(tag) { return tag.label; }) : undefined,
           characters: commaTags.characters.length ? commaTags.characters.map(function(tag) { return tag.label; }) : undefined,
           freeforms: commaTags.freeforms.length ? commaTags.freeforms.map(function(tag) { return tag.label; }) : undefined,
+        },
+        stats: {
+          language: stats.language,
+          words: stats.words,
+          chapters: stats.chapters,
+          kudos: stats.kudos,
+          hits: stats.hits,
+          comments: stats.comments,
+          bookmarks: stats.bookmarks,
         },
         extraBadges: root.className ? root.className.split(/\\s+/).filter(Boolean) : undefined,
       }

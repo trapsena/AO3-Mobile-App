@@ -96,6 +96,7 @@ export interface AO3BookmarkData {
   summary?: string | React.ReactNode;
   tags?: AO3WorkTagGroups;
   fandoms?: AO3Link[];
+  stats?: AO3WorkStats;
   extraBadges?: string[];
 }
 
@@ -398,7 +399,7 @@ const AO3WorkBlurb: React.FC<Props> = ({ kind = "work", work, bookmark, onPressW
 
   if (!data) return null;
 
-  const stats = !isBookmark ? (work?.stats ?? {}) : {};
+  const stats = (isBookmark ? bookmark?.stats : work?.stats) ?? {};
   const summarySource = data.summary;
   const summary = typeof summarySource === "string" ? <Text style={styles.summaryText}>{summarySource}</Text> : summarySource;
   const requiredTagIcons = !isBookmark ? work?.requiredTagIcons : bookmark?.requiredTagIcons;

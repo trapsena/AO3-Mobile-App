@@ -4,11 +4,12 @@ import { Ionicons } from "@expo/vector-icons";
 import FanficReader from "./screens/FanficReader";
 import LoginScreen from "./screens/LoginScreen";
 import HomeScreen from "./screens/HomeScreen";
+import AO3HistoryScreen from "./screens/AO3HistoryScreen";
 import { useAO3Session } from "./hooks/useao3Auth";
 
 const App: React.FC = () => {
   const { session, username, loading, login, logout } = useAO3Session();
-  const [activeTab, setActiveTab] = useState<"home" | "reader">("home");
+  const [activeTab, setActiveTab] = useState<"home" | "reader" | "history">("home");
 
   if (loading) {
     return (
@@ -36,6 +37,8 @@ const App: React.FC = () => {
       {/* Content */}
       {activeTab === "home" ? (
         <HomeScreen username={username} onLogout={logout} />
+      ) : activeTab === "history" ? (
+        <AO3HistoryScreen username={username!} />
       ) : (
         <FanficReader />
       )}
@@ -56,6 +59,14 @@ const App: React.FC = () => {
         >
           <Ionicons name="book" size={24} color={activeTab === "reader" ? "#7EC14B" : "#999"} />
           <Text style={[styles.tabLabel, activeTab === "reader" && styles.tabLabelActive]}>Reader</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tabBtn, activeTab === "history" && styles.tabBtnActive]}
+          onPress={() => setActiveTab("history")}
+        >
+          <Ionicons name="documents-outline" size={24} color={activeTab === "history" ? "#7EC14B" : "#999"} />
+          <Text style={[styles.tabLabel, activeTab === "history" && styles.tabLabelActive]}>History</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
