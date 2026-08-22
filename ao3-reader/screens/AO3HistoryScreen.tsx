@@ -458,12 +458,29 @@ const AO3HistoryScreen: React.FC<Props> = ({ username, title, showHeader = true,
     (async () => {
       try {
         const res = await fetchWithSession(currentUrl);
-        if (!res.ok) return;
+        console.log("[AO3HistoryScreen] List fetch response", {
+          url: currentUrl,
+          status: res.status,
+          ok: res.ok,
+          redirected: res.redirected,
+          finalUrl: res.url,
+        });
+        if (!res.ok) {
+          console.warn("[AO3HistoryScreen] List fetch was not ok, falling back to direct WebView load", {
+            status: res.status,
+            statusText: res.statusText,
+          });
+          return;
+        }
         const html = await res.text();
         if (cancelled) return;
         setSourceHtml(html);
-      } catch (err) {
-        console.warn("[AO3HistoryScreen] Session fetch failed, falling back to direct page load:", err);
+      } catch (err: any) {
+        console.warn("[AO3HistoryScreen] Session fetch failed, falling back to direct page load:", {
+          name: err?.name,
+          message: err?.message,
+          stack: err?.stack,
+        });
       }
     })();
 
@@ -520,7 +537,13 @@ const AO3HistoryScreen: React.FC<Props> = ({ username, title, showHeader = true,
   };
 
   const handleDelete = useCallback((item: AO3ReadingItem) => {
-    if (!item.meta.deleteUrl || !item.meta.readingId) return;
+    if (!item.meta.deleteUrl || !item.meta.readingId) {
+      console.warn("[AO3HistoryScreen] Delete skipped — missing deleteUrl or readingId", {
+        deleteUrl: item.meta.deleteUrl,
+        readingId: item.meta.readingId,
+      });
+      return;
+    }
 
     Alert.alert("Remove from History", `Remove "${item.work.title}" from your history?`, [
       { text: "Cancel", style: "cancel" },
@@ -529,31 +552,78 @@ const AO3HistoryScreen: React.FC<Props> = ({ username, title, showHeader = true,
         style: "destructive",
         onPress: async () => {
           setRemovingIds((prev) => new Set(prev).add(item.id));
-          try {
-            const body = new URLSearchParams();
-            body.append("_method", "delete");
-            if (item.meta.authenticityToken) {
-              body.append("authenticity_token", item.meta.authenticityToken);
-            }
-            body.append("reading", item.meta.readingId!);
-            body.append("commit", "Delete from History");
 
-            // NOTE: fetchWithSession is assumed to forward a (url, init) signature
-            // like the standard fetch API. If ao3Auth's implementation only
-            // accepts a single url argument, this call needs updating there.
-            const res = await fetchWithSession(item.meta.deleteUrl!, {
-              method: "POST",
-              headers: { "Content-Type": "application/x-www-form-urlencoded" },
-              body: body.toString(),
-            } as any);
+          const body = new URLSearchParams();
+          body.append("_method", "delete");
+          if (item.meta.authenticityToken) {
+            body.append("authenticity_token", item.meta.authenticityToken);
+          }
+          body.append("reading", item.meta.readingId!);
+          body.append("commit", "Delete from History");
+
+          const requestInit: RequestInit = {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: body.toString(),
+          };
+
+          console.log("[AO3HistoryScreen] Deleting reading item — request", {
+            title: item.work.title,
+            deleteUrl: item.meta.deleteUrl,
+            readingId: item.meta.readingId,
+            hasToken: !!item.meta.authenticityToken,
+            body: body.toString(),
+          });
+
+          try {
+            // fetchWithSession now accepts an optional init and attaches the
+            // AsyncStorage-backed session cookie regardless of method, so this
+            // POST is authenticated the same way the GET listing fetch is.
+            const res = await fetchWithSession(item.meta.deleteUrl!, requestInit);
+
+            console.log("[AO3HistoryScreen] Delete response", {
+              status: res.status,
+              statusText: res.statusText,
+              ok: res.ok,
+              redirected: res.redirected,
+              finalUrl: res.url,
+            });
 
             if (res.ok) {
+              console.log("[AO3HistoryScreen] Delete succeeded, removing item locally:", item.id);
               setItems((prev) => prev.filter((entry) => entry.id !== item.id));
-            } else {
-              Alert.alert("Couldn't remove", "AO3 didn't confirm the removal. Try again.");
+              return;
             }
-          } catch (err) {
-            console.warn("[AO3HistoryScreen] Delete failed:", err);
+
+            const bodyText = await res.text().catch((readErr) => {
+              console.warn("[AO3HistoryScreen] Could not read error response body:", readErr);
+              return "";
+            });
+
+            console.warn("[AO3HistoryScreen] Delete request was not ok", {
+              status: res.status,
+              statusText: res.statusText,
+              redirected: res.redirected,
+              finalUrl: res.url,
+              bodyPreview: bodyText.slice(0, 500),
+            });
+
+            if (res.status === 401 || res.status === 403 || /sign in|log in/i.test(bodyText)) {
+              // AO3 redirected to a login/auth page — the session cookie likely
+              // isn't reaching this request.
+              Alert.alert("Couldn't remove", "AO3 may have signed you out. Try reloading and signing in again.");
+            } else if (res.status === 422) {
+              // Usually an invalid/expired authenticity_token.
+              Alert.alert("Couldn't remove", "AO3 rejected the request (expired token). Try reloading this list.");
+            } else {
+              Alert.alert("Couldn't remove", `AO3 didn't confirm the removal (status ${res.status}).`);
+            }
+          } catch (err: any) {
+            console.warn("[AO3HistoryScreen] Delete request threw an error", {
+              name: err?.name,
+              message: err?.message,
+              stack: err?.stack,
+            });
             Alert.alert("Couldn't remove", "Something went wrong removing this item.");
           } finally {
             setRemovingIds((prev) => {

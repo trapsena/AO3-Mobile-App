@@ -117,13 +117,39 @@ export async function getSessionCookie(): Promise<string | null> {
   return AsyncStorage.getItem(SESSION_KEY);
 }
 
-export async function fetchWithSession(url: string): Promise<Response> {
+export async function fetchWithSession(url: string, init: RequestInit = {}): Promise<Response> {
   const cookieHeader = await buildCookieHeader();
-  return fetch(url, {
-    headers: {
-      Cookie: cookieHeader,
-    },
+
+  // Merge whatever headers the caller passed in (e.g. Content-Type for a
+  // POST body) with the stored AO3 session cookie. The cookie is always
+  // (re)applied last so a caller can't accidentally drop the session by
+  // passing their own headers object.
+  const headers = new Headers(init.headers);
+  if (cookieHeader) {
+    headers.set("Cookie", cookieHeader);
+  }
+
+  console.log("[ao3Auth] fetchWithSession request", {
+    url,
+    method: init.method || "GET",
+    hasCookieHeader: !!cookieHeader,
+    cookieHeaderPreview: cookieHeader ? `${cookieHeader.slice(0, 40)}...` : "(none)",
   });
+
+  const res = await fetch(url, {
+    ...init,
+    headers,
+  });
+
+  console.log("[ao3Auth] fetchWithSession response", {
+    url,
+    status: res.status,
+    ok: res.ok,
+    redirected: res.redirected,
+    finalUrl: res.url,
+  });
+
+  return res;
 }
 
 export async function logoutAO3() {
