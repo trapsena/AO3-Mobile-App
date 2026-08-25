@@ -1,14 +1,17 @@
 import React from "react";
 import { View, StyleSheet, TouchableOpacity, Text, Linking } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import AO3ListingScreen from "./AO3ListingScreen";
+import AO3ListingScreen, { AO3ListingItem } from "./AO3ListingScreen";
 
 interface Props {
   username: string | null;
   onLogout: () => Promise<void>;
+  // Called with a fic's URL when a work card is pressed. The caller (App.tsx)
+  // owns the active tab, so it's the one that should switch to the Reader tab.
+  onOpenReader?: (url: string) => void;
 }
 
-const HomeScreen: React.FC<Props> = ({ username, onLogout }) => {
+const HomeScreen: React.FC<Props> = ({ username, onLogout, onOpenReader }) => {
   if (!username) {
     return (
       <View style={styles.container}>
@@ -29,6 +32,15 @@ const HomeScreen: React.FC<Props> = ({ username, onLogout }) => {
     } catch (e) {
       console.warn("[HomeScreen] Could not open profile URL:", e);
     }
+  };
+
+  const handleItemPress = (item: AO3ListingItem) => {
+    const url = item.work?.workUrl ?? item.bookmark?.workUrl;
+    if (!url) {
+      console.warn("[HomeScreen] Pressed item has no work URL, nothing to open:", item.id);
+      return;
+    }
+    onOpenReader?.(url);
   };
 
   return (
@@ -55,6 +67,7 @@ const HomeScreen: React.FC<Props> = ({ username, onLogout }) => {
         url={profileUrl}
         title={`${username}'s AO3 dashboard`}
         showHeader={false}
+        onItemPress={handleItemPress}
       />
     </View>
   );

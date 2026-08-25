@@ -9,6 +9,7 @@ import {
   Modal,
 } from "react-native";
 import Slider from "@react-native-community/slider";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { WebView, WebViewMessageEvent } from "react-native-webview";
 import ChapterView from "../components/ChapterView";
 import ChapterControls from "../components/ChapterControls";
@@ -21,7 +22,7 @@ import { fetchWithSession, getSessionCookie } from "../api/ao3Auth";
 
 
 // ✅ WebView oculta
-const HiddenWebView = React.forwardRef((props: any, ref: any) => (
+const HiddenWebView = React.forwardRef<any, any>((props, ref) => (
   <View
     style={{
       position: "absolute",
@@ -40,7 +41,52 @@ HiddenWebView.displayName = "DataExtractorWebView";
 
 type ChapterLink = { href: string; text: string };
 
-const WORK_URL = "https://archiveofourown.org/works/47843671/chapters/120616627"; // exemplo
+// Fallback used only if this screen is rendered without an `initialUrl` prop
+// (e.g. previewing it standalone). Normally the caller supplies the fic's URL.
+const FALLBACK_WORK_URL = "https://archiveofourown.org/works/47843671/chapters/120616627";
+
+/* ------------------------------------------------------------------ */
+/* Reading progress persistence                                        */
+/* ------------------------------------------------------------------ */
+
+const READING_PROGRESS_PREFIX = "ao3_reading_progress:";
+
+interface ReadingProgress {
+  workId: string;
+  workUrl: string;
+  currentUrl: string;
+  index: number;
+  title?: string;
+  chapterTitle?: string;
+  paragraphIndex: number;
+  updatedAt: number;
+}
+
+// Any URL for the same fic — the base work URL or any /chapters/<id> link —
+// contains the same numeric work id, so this is what saved progress is keyed by.
+function extractWorkId(url: string): string | null {
+  const m = url.match(/works\/(\d+)/);
+  return m ? m[1] : null;
+}
+
+async function loadReadingProgress(workId: string): Promise<ReadingProgress | null> {
+  try {
+    const raw = await AsyncStorage.getItem(READING_PROGRESS_PREFIX + workId);
+    if (!raw) return null;
+    return JSON.parse(raw) as ReadingProgress;
+  } catch (err) {
+    console.warn("[FanficReader] Failed to load reading progress:", err);
+    return null;
+  }
+}
+
+async function saveReadingProgress(progress: ReadingProgress): Promise<void> {
+  try {
+    await AsyncStorage.setItem(READING_PROGRESS_PREFIX + progress.workId, JSON.stringify(progress));
+  } catch (err) {
+    console.warn("[FanficReader] Failed to save reading progress:", err);
+  }
+}
 
 // Script para coletar conteúdo e capítulos
 const INJECTED_JS = `
@@ -114,9 +160,24 @@ const INJECTED_JS = `
 true;
 `;
 
-const FanficReader: React.FC = () => {
+interface Props {
+  // URL of the work/chapter to open. This is how other screens (e.g. a work
+  // card's onPress) hand off "open this fic" to the reader.
+  initialUrl?: string;
+  // Called when the person taps the back button. If omitted, no back button
+  // is shown (useful if this screen is reached via a navigator that already
+  // provides its own back gesture/header).
+  onClose?: () => void;
+}
+
+const FanficReader: React.FC<Props> = ({ initialUrl, onClose }) => {
   const webRef = useRef<any>(null);
-  const [currentUrl, setCurrentUrl] = useState(WORK_URL);
+  // NOTE: this only seeds the *initial* URL. If a parent keeps this component
+  // mounted and just changes `initialUrl` to open a different fic, that won't
+  // do anything by itself — render with `key={initialUrl}` at the call site
+  // (e.g. <FanficReader key={url} initialUrl={url} .../>) so React remounts
+  // a fresh reader (fresh chapter index, chapter list, etc.) per fic.
+  const [currentUrl, setCurrentUrl] = useState(initialUrl || FALLBACK_WORK_URL);
   const [loading, setLoading] = useState(true);
   const [contentHtml, setContentHtml] = useState("");
   const [rawContentHtml, setRawContentHtml] = useState("");
@@ -136,10 +197,45 @@ const FanficReader: React.FC = () => {
   const [paragraphSpacing, setParagraphSpacing] = useState(12);
   const [currentTtsIndex, setCurrentTtsIndex] = useState(0);
 
+  // Reading-progress restore: `hydrated` gates the content-fetch effect below
+  // so we check AsyncStorage for a saved chapter/position *before* fetching
+  // anything, instead of loading chapter 1 and then immediately re-fetching
+  // whatever chapter was actually saved.
+  const [hydrated, setHydrated] = useState(false);
+  const pendingParagraphIndexRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const workId = extractWorkId(initialUrl || FALLBACK_WORK_URL);
+      if (workId) {
+        const saved = await loadReadingProgress(workId);
+        if (!cancelled && saved) {
+          console.log("[FanficReader] Resuming saved reading progress", saved);
+          setCurrentUrl(saved.currentUrl);
+          setIndex(saved.index);
+          if (saved.paragraphIndex > 0) {
+            pendingParagraphIndexRef.current = saved.paragraphIndex;
+          }
+        } else if (!cancelled) {
+          console.log("[FanficReader] No saved progress for this work, starting fresh:", workId);
+        }
+      }
+      if (!cancelled) setHydrated(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally runs once per mount — pair with `key={initialUrl}` at the
+    // call site so opening a different fic mounts a fresh instance.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // When the chapter URL changes try to fetch it using the logged-in session.
   // If fetching with session fails or doesn't yield the chapter body, fall back
   // to the hidden WebView extraction (which works for public pages).
   useEffect(() => {
+    if (!hydrated) return; // wait until we've checked for saved reading progress
     let cancelled = false;
     const extractContent = (html: string): string | null => {
       if (!html) return null;
@@ -196,7 +292,7 @@ const FanficReader: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [currentUrl]);
+  }, [currentUrl, hydrated]);
 
   // Extrai parágrafos simples do HTML para leitura (fallback sem cheerio)
   useEffect(() => {
@@ -213,6 +309,18 @@ const FanficReader: React.FC = () => {
       setParagraphs([]);
     }
   }, [contentHtml]);
+
+  // Once the current chapter's paragraphs are available, apply any saved
+  // paragraph position that was queued during the hydration step above.
+  useEffect(() => {
+    if (pendingParagraphIndexRef.current === null || paragraphs.length === 0) return;
+    const target = pendingParagraphIndexRef.current;
+    pendingParagraphIndexRef.current = null;
+    if (target < paragraphs.length) {
+      console.log("[FanficReader] Restoring saved paragraph position:", target);
+      setCurrentTtsIndex(target);
+    }
+  }, [paragraphs]);
 
   // NOTE: highlighting is now handled inside the visible WebView (ChapterView)
 
@@ -235,6 +343,32 @@ const FanficReader: React.FC = () => {
       }
     })();
   }, [currentUrl, index, chapterTitle, rawContentHtml]);
+
+  // Persist reading progress (fic, chapter, and last-focused paragraph)
+  // whenever any of it changes, debounced so rapid paragraph taps or quick
+  // chapter flips don't hammer AsyncStorage with a write per change.
+  useEffect(() => {
+    if (!hydrated) return; // don't save until we've applied any saved progress first
+    const workId = extractWorkId(currentUrl) || extractWorkId(initialUrl || FALLBACK_WORK_URL);
+    if (!workId) return;
+
+    const handle = setTimeout(() => {
+      const progress: ReadingProgress = {
+        workId,
+        workUrl: initialUrl || FALLBACK_WORK_URL,
+        currentUrl,
+        index,
+        title,
+        chapterTitle,
+        paragraphIndex: currentTtsIndex,
+        updatedAt: Date.now(),
+      };
+      saveReadingProgress(progress);
+      console.log("[FanficReader] Saved reading progress", progress);
+    }, 800);
+
+    return () => clearTimeout(handle);
+  }, [hydrated, currentUrl, index, currentTtsIndex, title, chapterTitle, initialUrl]);
 
   const handleMessage = (e: WebViewMessageEvent) => {
     try {
@@ -265,6 +399,7 @@ const FanficReader: React.FC = () => {
       console.log('[FanficReader] goPrev ->', { from: index, to: newIndex, url: newUrl });
       setIndex(newIndex);
       setCurrentUrl(newUrl);
+      setCurrentTtsIndex(0);
     }
   };
   const goNext = () => {
@@ -274,11 +409,41 @@ const FanficReader: React.FC = () => {
       console.log('[FanficReader] goNext ->', { from: index, to: newIndex, url: newUrl });
       setIndex(newIndex);
       setCurrentUrl(newUrl);
+      setCurrentTtsIndex(0);
     }
+  };
+
+  // Force an immediate (non-debounced) save right before leaving, so tapping
+  // back doesn't race the 800ms debounce in the effect above.
+  const handleClose = () => {
+    const workId = extractWorkId(currentUrl) || extractWorkId(initialUrl || FALLBACK_WORK_URL);
+    if (workId) {
+      saveReadingProgress({
+        workId,
+        workUrl: initialUrl || FALLBACK_WORK_URL,
+        currentUrl,
+        index,
+        title,
+        chapterTitle,
+        paragraphIndex: currentTtsIndex,
+        updatedAt: Date.now(),
+      }).catch((err) => console.warn("[FanficReader] Failed to save progress on close:", err));
+    }
+    onClose?.();
   };
 
   return (
     <View style={styles.container}>
+      {onClose ? (
+        <TouchableOpacity
+          onPress={handleClose}
+          style={styles.backBtn}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="arrow-back" size={22} color="#fff" />
+        </TouchableOpacity>
+      ) : null}
+
       {/* Header componentizado */}
       <ReaderHeader
         fanficTitle={title}
@@ -342,6 +507,20 @@ const FanficReader: React.FC = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
+  backBtn: {
+    position: "absolute",
+    top: 12,
+    left: 12,
+    zIndex: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",

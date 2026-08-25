@@ -10,6 +10,18 @@ import { useAO3Session } from "./hooks/useao3Auth";
 const App: React.FC = () => {
   const { session, username, loading, login, logout } = useAO3Session();
   const [activeTab, setActiveTab] = useState<"home" | "reader" | "history">("home");
+  const [readerUrl, setReaderUrl] = useState<string | null>(null);
+
+  // Shared by HomeScreen and AO3HistoryScreen's work-card press handlers:
+  // stash which fic to open, then actually switch to the Reader tab.
+  const openReader = (url?: string) => {
+    if (!url) {
+      console.warn("[App] openReader called without a URL, ignoring");
+      return;
+    }
+    setReaderUrl(url);
+    setActiveTab("reader");
+  };
 
   if (loading) {
     return (
@@ -36,11 +48,17 @@ const App: React.FC = () => {
 
       {/* Content */}
       {activeTab === "home" ? (
-        <HomeScreen username={username} onLogout={logout} />
+        <HomeScreen username={username} onLogout={logout} onOpenReader={openReader} />
       ) : activeTab === "history" ? (
-        <AO3HistoryScreen username={username!} />
+        <AO3HistoryScreen username={username!} onWorkPress={(work) => openReader(work.workUrl)} />
       ) : (
-        <FanficReader />
+        <FanficReader
+          // Remount per fic so the reader's internal chapter/index state
+          // resets cleanly when a different work is opened.
+          key={readerUrl ?? "no-fic-selected"}
+          initialUrl={readerUrl ?? undefined}
+          onClose={() => setActiveTab("home")}
+        />
       )}
 
       {/* Bottom Navigation */}
