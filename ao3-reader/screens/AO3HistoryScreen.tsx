@@ -4,6 +4,7 @@ import {
   Alert,
   FlatList,
   Linking,
+  RefreshControl,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -74,6 +75,56 @@ const buildTabUrl = (username: string, tab: AO3HistoryTab) => {
   const base = readingsBaseUrl(username);
   return tab === "to-read" ? `${base}?show=to-read` : base;
 };
+
+// Appends a timestamp so every request hits AO3's origin fresh instead of
+// potentially being served a cached response for a URL we've already fetched
+// (e.g. reopening History after visiting a fic elsewhere, which changes what
+// AO3's server would return for the exact same readings URL).
+const withCacheBust = (url: string) => {
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}_=${Date.now()}`;
+};
+
+// The WebView only reloads (and only re-runs the extractor script) when the
+// `source.html` string it's given actually changes. If AO3 happens to return
+// byte-identical HTML to what's already loaded, a plain re-fetch would look
+// like a no-op state update and silently skip the reload. Prefixing a unique
+// comment guarantees the string is always different, so a resync always
+// forces a real reload + re-extraction.
+const tagHtmlForReload = (html: string) =>
+  `<!-- ao3-history-sync:${Date.now()}:${Math.random().toString(36).slice(2)} -->\n${html}`;
+
+// Shared by the mount/tab/page-navigation effect and the pull-to-refresh
+// handler so both fetch AO3's history page the exact same (logged,
+// cache-busted) way.
+async function fetchHistoryHtml(url: string): Promise<string | null> {
+  const bustedUrl = withCacheBust(url);
+  try {
+    const res = await fetchWithSession(bustedUrl);
+    console.log("[AO3HistoryScreen] List fetch response", {
+      url: bustedUrl,
+      status: res.status,
+      ok: res.ok,
+      redirected: res.redirected,
+      finalUrl: res.url,
+    });
+    if (!res.ok) {
+      console.warn("[AO3HistoryScreen] List fetch was not ok", {
+        status: res.status,
+        statusText: res.statusText,
+      });
+      return null;
+    }
+    return await res.text();
+  } catch (err: any) {
+    console.warn("[AO3HistoryScreen] List fetch threw an error:", {
+      name: err?.name,
+      message: err?.message,
+      stack: err?.stack,
+    });
+    return null;
+  }
+}
 
 /* ------------------------------------------------------------------ */
 /* Hidden WebView (HTML -> structured data extractor)                  */
@@ -444,6 +495,7 @@ const AO3HistoryScreen: React.FC<Props> = ({ username, title, showHeader = true,
   const [tab, setTab] = useState<AO3HistoryTab>("history");
   const [currentUrl, setCurrentUrl] = useState(() => buildTabUrl(username, "history"));
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [pageTitle, setPageTitle] = useState(title || "");
   const [items, setItems] = useState<AO3ReadingItem[]>([]);
   const [pagination, setPagination] = useState<AO3Pagination | null>(null);
@@ -456,37 +508,31 @@ const AO3HistoryScreen: React.FC<Props> = ({ username, title, showHeader = true,
     setSourceHtml(null);
 
     (async () => {
-      try {
-        const res = await fetchWithSession(currentUrl);
-        console.log("[AO3HistoryScreen] List fetch response", {
-          url: currentUrl,
-          status: res.status,
-          ok: res.ok,
-          redirected: res.redirected,
-          finalUrl: res.url,
-        });
-        if (!res.ok) {
-          console.warn("[AO3HistoryScreen] List fetch was not ok, falling back to direct WebView load", {
-            status: res.status,
-            statusText: res.statusText,
-          });
-          return;
-        }
-        const html = await res.text();
-        if (cancelled) return;
-        setSourceHtml(html);
-      } catch (err: any) {
-        console.warn("[AO3HistoryScreen] Session fetch failed, falling back to direct page load:", {
-          name: err?.name,
-          message: err?.message,
-          stack: err?.stack,
-        });
-      }
+      const html = await fetchHistoryHtml(currentUrl);
+      if (cancelled || !html) return;
+      setSourceHtml(tagHtmlForReload(html));
     })();
 
     return () => {
       cancelled = true;
     };
+  }, [currentUrl]);
+
+  // Re-fetches whatever page is currently being viewed (same URL, same tab,
+  // same pagination position) so the list stays in sync with AO3's actual
+  // history — e.g. after reading a fic elsewhere and coming back. Existing
+  // items are left on screen until the refreshed data replaces them, instead
+  // of blanking out to the full-screen loading state.
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    const html = await fetchHistoryHtml(currentUrl);
+    if (html) {
+      setSourceHtml(tagHtmlForReload(html));
+    } else {
+      // Fetch failed outright — nothing to reload, so there's no pending
+      // WebView message to clear `refreshing` for us. Stop spinning now.
+      setRefreshing(false);
+    }
   }, [currentUrl]);
 
   const resetListPosition = useCallback(() => {
@@ -533,6 +579,7 @@ const AO3HistoryScreen: React.FC<Props> = ({ username, title, showHeader = true,
       console.warn("[AO3HistoryScreen] Could not parse history payload:", err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -702,6 +749,14 @@ const AO3HistoryScreen: React.FC<Props> = ({ username, title, showHeader = true,
           data={items}
           keyExtractor={(item, index) => item.id || String(index)}
           contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor="#7ec14b"
+              colors={["#7ec14b"]}
+            />
+          }
           renderItem={({ item }) => (
             <View style={styles.itemWrap}>
               <AO3WorkBlurb
