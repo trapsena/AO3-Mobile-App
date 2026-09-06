@@ -299,12 +299,49 @@ const LISTING_INJECTED_JS = `
   function parseBookmark(root) {
     var titleLink = firstMatch(root, ["h4.heading a", ".header h4 a", "a[href*='/works/']"]);
     var workAuthor = root.querySelector("a[rel='author']");
-    var bookmarker = firstMatch(root, [".user a", ".user .meta a", "a[href*='/users/']"]);
+
+    // The bookmarker's own info (byline, date bookmarked, their tags, their
+    // notes) all live inside this block, separate from the work's own info
+    // above it. Scoping to it avoids picking up the work's data by mistake.
+    var ownModule = firstMatch(root, [".own.user.module.group", ".user.module.group"]);
+
+    var bookmarkerLink = (ownModule && ownModule.querySelector("h5.byline a")) || firstMatch(root, [
+      "h5.byline.heading a",
+      ".user a",
+      ".user .meta a",
+      "a[href*='/users/']",
+    ]);
+    var bookmarker = bookmarkerLink
+      ? { label: text(bookmarkerLink), href: abs(bookmarkerLink.getAttribute("href")) || undefined }
+      : undefined;
+
     var statusSlot = firstMatch(root, ["p.status", ".status"]);
     var statusIconNode = statusSlot && statusSlot.querySelector("a > span[class]:not(.text), a span[class]:not(.text), span[class]:not(.text)");
     var statusLinkNode = statusSlot && statusSlot.querySelector("a");
     var countNode = firstMatch(root, ["p.status .count a", ".status .count a", ".count a", ".status .count"]);
-    var datetime = firstMatch(root, [".datetime", "p.datetime"]);
+
+    // A bookmark blurb has TWO ".datetime" elements: the work's own publish
+    // date (inside .header.module, earlier in the DOM) and the bookmark's
+    // own "bookmarked on" date (inside .own.user.module.group). Prefer the
+    // latter explicitly instead of just grabbing the first ".datetime" found.
+    var datetimeNode = (ownModule && ownModule.querySelector("p.datetime")) || firstMatch(root, [".datetime", "p.datetime"]);
+
+    var userMetaContainer = ownModule
+      ? ownModule.querySelector("ul.meta.tags.commas")
+      : firstMatch(root, ["ul.meta.tags.commas"]);
+    var userMeta = userMetaContainer
+      ? Array.from(userMetaContainer.querySelectorAll("a.tag")).map(function(a) {
+          return { label: text(a), href: abs(a.getAttribute("href")) || undefined };
+        }).filter(function(item) { return item.label; })
+      : [];
+
+    var notesEl = (ownModule && ownModule.querySelector("blockquote.userstuff.notes")) || firstMatch(root, ["blockquote.userstuff.notes"]);
+    var notes = null;
+    if (notesEl) {
+      var notePs = Array.from(notesEl.querySelectorAll("p")).map(function(p) { return text(p); }).filter(Boolean);
+      notes = notePs.length ? notePs.join("\\n\\n") : text(notesEl);
+    }
+
     var fandomLinks = collectTags(root, ["h5.fandoms a.tag", ".fandoms a.tag"]);
     var commaTags = collectCommaTags(root);
     var required = collectRequired(root);
@@ -322,7 +359,7 @@ const LISTING_INJECTED_JS = `
         title: titleLink ? text(titleLink) : text(root),
         workUrl: titleLink ? abs(titleLink.getAttribute("href")) || undefined : undefined,
         workAuthor: workAuthor ? { label: text(workAuthor), href: abs(workAuthor.getAttribute("href")) || undefined } : undefined,
-        bookmarker: bookmarker ? { label: text(bookmarker), href: abs(bookmarker.getAttribute("href")) || undefined } : undefined,
+        bookmarker: bookmarker,
         status: statusSlot ? { label: text(statusSlot), href: abs((statusLinkNode && statusLinkNode.getAttribute("href")) || statusSlot.getAttribute("href")) || undefined } : undefined,
         bookmarkStatusIcon: statusSlot ? {
           className: fullClassName || spriteClassName,
@@ -333,8 +370,12 @@ const LISTING_INJECTED_JS = `
         requiredTags: required,
         requiredTagIcons: required.icons,
         count: countNode ? text(countNode) : undefined,
-        datetime: datetime ? text(datetime) : undefined,
-        summary: collectSummary(root) || undefined,
+        datetime: datetimeNode ? text(datetimeNode) : undefined,
+        userMeta: userMeta.length ? userMeta : undefined,
+        // Prefer the bookmarker's own note; there's no separate UI slot for
+        // the work's own summary on a bookmark card right now, so leave this
+        // blank rather than mislabeling the work's summary as "Notes".
+        summary: notes || undefined,
         fandoms: fandomLinks.length ? fandomLinks : undefined,
         tags: {
           warnings: commaTags.warnings.length ? commaTags.warnings.map(function(tag) { return tag.label; }) : undefined,
@@ -351,7 +392,6 @@ const LISTING_INJECTED_JS = `
           comments: stats.comments,
           bookmarks: stats.bookmarks,
         },
-        extraBadges: root.className ? root.className.split(/\\s+/).filter(Boolean) : undefined,
       }
     };
   }

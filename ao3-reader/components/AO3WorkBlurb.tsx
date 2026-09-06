@@ -106,7 +106,7 @@ interface Props {
   bookmark?: AO3BookmarkData;
   onPressWork?: (item: AO3WorkBlurbData | AO3BookmarkData) => void;
   onPressAuthor?: (author: AO3Link) => void;
-  onPressTag?: (tag: AO3Link, group?: AO3TagGroup | "fandoms" | "rating" | "status" | "category" | "warnings") => void;
+  onPressTag?: (tag: AO3Link, group?: AO3TagGroup | "fandoms" | "rating" | "status" | "category" | "warnings" | "bookmarkerTags") => void;
   style?: ViewStyle;
 }
 
@@ -393,6 +393,43 @@ const renderStringList = (
   );
 };
 
+// Same comma-separated inline layout as renderStringList, but for links that
+// should actually be tappable (e.g. a bookmarker's own tags) — each item
+// opens its href, or defers to onPress/onPressTag when provided.
+const renderCommaLinkList = (
+  items?: AO3Link[],
+  tone: "muted" | "warning" | "accent" = "muted",
+  onPress?: (item: AO3Link) => void,
+) => {
+  if (!items || items.length === 0) return null;
+
+  return (
+    <Text style={styles.commaTagsRow}>
+      {items.map((item, index) => (
+        <React.Fragment key={`${item.label}-${index}`}>
+          <Text
+            style={[
+              styles.commaTagText,
+              tone === "warning" && styles.commaTagTextWarning,
+              tone === "accent" && styles.commaTagTextAccent,
+            ]}
+            onPress={
+              onPress
+                ? () => onPress(item)
+                : item.href
+                  ? () => openUrl(item.href)
+                  : undefined
+            }
+          >
+            {item.label}
+          </Text>
+          {index < items.length - 1 ? <Text style={styles.commaTagSeparator}>, </Text> : null}
+        </React.Fragment>
+      ))}
+    </Text>
+  );
+};
+
 const AO3WorkBlurb: React.FC<Props> = ({ kind = "work", work, bookmark, onPressWork, onPressAuthor, onPressTag, style }) => {
   const isBookmark = kind === "bookmark";
   const data = (isBookmark ? bookmark : work) ?? null;
@@ -490,6 +527,13 @@ const AO3WorkBlurb: React.FC<Props> = ({ kind = "work", work, bookmark, onPressW
       tags?.freeforms?.length ? (
         <View style={styles.tagsSection}>
           {renderStringList(commaTags)}
+        </View>
+      ) : null}
+
+      {isBookmark && bookmark?.userMeta && bookmark.userMeta.length > 0 ? (
+        <View style={styles.summaryBlock}>
+          <Text style={styles.sectionLabel}>Bookmarker's Tags</Text>
+          {renderCommaLinkList(bookmark.userMeta, "muted", (item) => onPressTag?.(item, "bookmarkerTags"))}
         </View>
       ) : null}
 

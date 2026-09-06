@@ -1,6 +1,6 @@
 // services/TTSService.ts
 import * as Speech from "expo-speech";
-import { Audio } from "expo-av";
+import { createAudioPlayer, setAudioModeAsync, AudioPlayer, AudioStatus } from "expo-audio";
 import { Platform } from "react-native";
 
 export type TTSProvider = "expo" | "gemini";
@@ -72,7 +72,8 @@ class ExpoTTSService implements TTSServiceInterface {
 
 class GeminiTTSService implements TTSServiceInterface {
   private settings: TTSSettings;
-  private sound: Audio.Sound | null = null;
+  private player: AudioPlayer | null = null;
+  private statusSubscription: { remove: () => void } | null = null;
   private _isSpeaking = false;
   private _isPaused = false;
 
@@ -83,10 +84,15 @@ class GeminiTTSService implements TTSServiceInterface {
 
   private async initAudio() {
     try {
-      await Audio.setAudioModeAsync({
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: true,
-        shouldDuckAndroid: true,
+      // expo-audio's AudioMode is unified across platforms (no more -iOS/-Android
+      // suffixed fields): playsInSilentModeIOS -> playsInSilentMode,
+      // staysActiveInBackground -> shouldPlayInBackground, and
+      // shouldDuckAndroid -> interruptionMode: "duckOthers" (now applies to both
+      // platforms instead of Android only).
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        shouldPlayInBackground: true,
+        interruptionMode: "duckOthers",
       });
     } catch (error) {
       console.error("[GeminiTTS] Error setting audio mode:", error);
@@ -234,15 +240,21 @@ class GeminiTTSService implements TTSServiceInterface {
       // Google Cloud TTS retorna MP3
       const dataUri = `data:audio/mp3;base64,${base64Audio}`;
 
-      // Criar e carregar som
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: dataUri },
-        { shouldPlay: true },
-        this.onPlaybackStatusUpdate(onDone)
-      );
+      // createAudioPlayer is synchronous and starts loading immediately;
+      // playback status (including completion) comes through as events
+      // instead of a callback passed at creation time.
+      const player = createAudioPlayer({ uri: dataUri });
+      this.player = player;
 
-      this.sound = sound;
+      this.statusSubscription = player.addListener("playbackStatusUpdate", (status: AudioStatus) => {
+        if (status.didJustFinish) {
+          this._isSpeaking = false;
+          this._isPaused = false;
+          onDone?.();
+        }
+      });
 
+      player.play();
     } catch (error) {
       console.error("[GeminiTTS] Error playing audio:", error);
       this._isSpeaking = false;
@@ -250,22 +262,17 @@ class GeminiTTSService implements TTSServiceInterface {
     }
   }
 
-  private onPlaybackStatusUpdate(onDone?: () => void) {
-    return (status: any) => {
-      if (status.didJustFinish) {
-        this._isSpeaking = false;
-        this._isPaused = false;
-        onDone?.();
-      }
-    };
-  }
-
   async stop(): Promise<void> {
-    if (this.sound) {
+    if (this.player) {
       try {
-        await this.sound.stopAsync();
-        await this.sound.unloadAsync();
-        this.sound = null;
+        this.player.pause();
+        // expo-audio doesn't reset position on its own, and there's no direct
+        // "unload" — pause + remove() (frees native resources) replaces the
+        // old stopAsync() + unloadAsync() pair.
+        this.statusSubscription?.remove();
+        this.statusSubscription = null;
+        this.player.remove();
+        this.player = null;
       } catch (error) {
         console.error("[GeminiTTS] Error stopping:", error);
       }
@@ -275,9 +282,9 @@ class GeminiTTSService implements TTSServiceInterface {
   }
 
   async pause(): Promise<void> {
-    if (this.sound && this._isSpeaking) {
+    if (this.player && this._isSpeaking) {
       try {
-        await this.sound.pauseAsync();
+        this.player.pause();
         this._isPaused = true;
       } catch (error) {
         console.error("[GeminiTTS] Error pausing:", error);
@@ -286,9 +293,9 @@ class GeminiTTSService implements TTSServiceInterface {
   }
 
   async resume(): Promise<void> {
-    if (this.sound && this._isPaused) {
+    if (this.player && this._isPaused) {
       try {
-        await this.sound.playAsync();
+        this.player.play();
         this._isPaused = false;
       } catch (error) {
         console.error("[GeminiTTS] Error resuming:", error);
