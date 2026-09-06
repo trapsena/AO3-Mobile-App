@@ -7,6 +7,13 @@ const COOKIES_KEY = "ao3_all_cookies";
 const SESSION_COOKIE_NAME = "_otwarchive_session";
 const AUTH_STORAGE_KEYS = [SESSION_KEY, USERNAME_KEY, COOKIES_KEY];
 
+function toAbsoluteAO3Url(href?: string | null) {
+  if (!href) return null;
+  if (/^https?:\/\//i.test(href)) return href;
+  if (href.startsWith("/")) return `${BASE_URL}${href}`;
+  return `${BASE_URL}/${href}`;
+}
+
 /**
  * Extract specific cookies from set-cookie header string
  */
@@ -228,6 +235,23 @@ export async function getUsername(): Promise<string | null> {
 
 export async function setUsername(username: string): Promise<void> {
   await AsyncStorage.setItem(USERNAME_KEY, username);
+}
+
+export async function getUserIconUrl(username: string): Promise<string | null> {
+  try {
+    const res = await fetchWithSession(`${BASE_URL}/users/${encodeURIComponent(username)}`);
+    if (!res.ok) return null;
+
+    const html = await res.text();
+    const match =
+      html.match(/<p[^>]*class=["'][^"']*\bicon\b[^"']*["'][^>]*>[\s\S]*?<img[^>]*class=["'][^"']*\bicon\b[^"']*["'][^>]*src=["']([^"']+)["']/i) ||
+      html.match(/<img[^>]*class=["'][^"']*\bicon\b[^"']*["'][^>]*src=["']([^"']+)["']/i);
+
+    return toAbsoluteAO3Url(match?.[1]);
+  } catch (e) {
+    console.warn("[ao3Auth] getUserIconUrl: Could not fetch user icon:", e);
+    return null;
+  }
 }
 
 /**
