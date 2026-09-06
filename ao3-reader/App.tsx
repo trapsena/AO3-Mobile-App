@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { SafeAreaView, StatusBar, StyleSheet, ActivityIndicator, View, TouchableOpacity, Text } from "react-native";
+import { SafeAreaView, StatusBar, StyleSheet, ActivityIndicator, View, TouchableOpacity, Text, Platform } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import FanficReader from "./screens/FanficReader";
 import LoginScreen from "./screens/LoginScreen";
@@ -26,7 +26,7 @@ const App: React.FC = () => {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle="light-content" backgroundColor="#000" />
         <ActivityIndicator size="large" color="#fff" style={{ marginTop: 40 }} />
       </SafeAreaView>
     );
@@ -36,7 +36,7 @@ const App: React.FC = () => {
   if (!session) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle="light-content" backgroundColor="#000" />
         <LoginScreen onLogin={login} />
       </SafeAreaView>
     );
@@ -44,7 +44,7 @@ const App: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="light-content" backgroundColor="#000" />
 
       {/* Content */}
       {activeTab === "home" ? (
@@ -100,7 +100,11 @@ const App: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#000" },
+  container: {
+    flex: 1,
+    backgroundColor: "#000",
+    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : 0,
+  },
   tabBar: {
     flexDirection: "row",
     backgroundColor: "#111",
