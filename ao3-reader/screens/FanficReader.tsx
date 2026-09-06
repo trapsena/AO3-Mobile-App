@@ -168,9 +168,12 @@ interface Props {
   // is shown (useful if this screen is reached via a navigator that already
   // provides its own back gesture/header).
   onClose?: () => void;
+  // Space to leave at the top for the app's collapsible header overlay,
+  // which stays static (not scroll-linked) while the reader is active.
+  topInset?: number;
 }
 
-const FanficReader: React.FC<Props> = ({ initialUrl, onClose }) => {
+const FanficReader: React.FC<Props> = ({ initialUrl, onClose, topInset = 0 }) => {
   const webRef = useRef<any>(null);
   // NOTE: this only seeds the *initial* URL. If a parent keeps this component
   // mounted and just changes `initialUrl` to open a different fic, that won't
@@ -433,11 +436,11 @@ const FanficReader: React.FC<Props> = ({ initialUrl, onClose }) => {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: topInset }]}>
       {onClose ? (
         <TouchableOpacity
           onPress={handleClose}
-          style={styles.backBtn}
+          style={[styles.backBtn, { top: topInset + 12 }]}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Ionicons name="arrow-back" size={22} color="#fff" />

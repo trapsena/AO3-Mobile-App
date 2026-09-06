@@ -2,10 +2,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
+  Animated,
   Linking,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   RefreshControl,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -62,6 +63,10 @@ interface Props {
   title?: string;
   showHeader?: boolean;
   onWorkPress?: (work: AO3WorkBlurbData) => void;
+  // Forwarded straight to the FlatList's onScroll so a parent (e.g. the app's
+  // collapsible header) can track this screen's scroll position.
+  onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  contentContainerTopPadding?: number;
 }
 
 /* ------------------------------------------------------------------ */
@@ -541,10 +546,17 @@ true;
 /* Screen                                                               */
 /* ------------------------------------------------------------------ */
 
-const AO3HistoryScreen: React.FC<Props> = ({ username, title, showHeader = true, onWorkPress }) => {
+const AO3HistoryScreen: React.FC<Props> = ({
+  username,
+  title,
+  showHeader = true,
+  onWorkPress,
+  onScroll,
+  contentContainerTopPadding = 0,
+}) => {
   const webRef = useRef<any>(null);
   const lastPayloadRef = useRef<string | null>(null);
-  const listRef = useRef<FlatList<any>>(null);
+  const listRef = useRef<any>(null);
 
   const [tab, setTab] = useState<AO3HistoryTab>("history");
   const [currentUrl, setCurrentUrl] = useState(() => buildTabUrl(username, "history"));
@@ -779,7 +791,7 @@ const AO3HistoryScreen: React.FC<Props> = ({ username, title, showHeader = true,
     !!pagination && (!!pagination.prevHref || !!pagination.nextHref || numericPages.length > 1);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={[styles.container, contentContainerTopPadding ? { paddingTop: contentContainerTopPadding } : null]}>
       {showHeader ? (
         <View style={styles.header}>
           <Text style={styles.headerTitle} numberOfLines={1}>
@@ -816,11 +828,13 @@ const AO3HistoryScreen: React.FC<Props> = ({ username, title, showHeader = true,
           </Text>
         </View>
       ) : (
-        <FlatList
+        <Animated.FlatList
           ref={listRef}
           data={items}
           keyExtractor={(item, index) => item.id || String(index)}
           contentContainerStyle={styles.listContent}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -946,7 +960,7 @@ const AO3HistoryScreen: React.FC<Props> = ({ username, title, showHeader = true,
         domStorageEnabled
         mixedContentMode="always"
       />
-    </SafeAreaView>
+    </View>
   );
 };
 

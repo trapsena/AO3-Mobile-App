@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Linking,
-  SafeAreaView,
-  SectionList,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   StyleSheet,
   Text,
   View,
@@ -53,6 +54,10 @@ interface Props {
   showHeader?: boolean;
   onGroupsLoaded?: (groups: AO3ListingGroup[]) => void;
   onItemPress?: (item: AO3ListingItem) => void;
+  // Forwarded straight to the SectionList's onScroll so a parent (e.g. the
+  // app's collapsible header) can track this screen's scroll position.
+  onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  contentContainerTopPadding?: number;
 }
 
 const LISTING_INJECTED_JS = `
@@ -573,7 +578,15 @@ const BookmarkMetaCard: React.FC<{ bookmark: AO3BookmarkData }> = ({ bookmark })
   );
 };
 
-const AO3ListingScreen: React.FC<Props> = ({ url, title, showHeader = true, onGroupsLoaded, onItemPress }) => {
+const AO3ListingScreen: React.FC<Props> = ({
+  url,
+  title,
+  showHeader = true,
+  onGroupsLoaded,
+  onItemPress,
+  onScroll,
+  contentContainerTopPadding = 0,
+}) => {
   const webRef = useRef<any>(null);
   const lastPayloadRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -650,7 +663,7 @@ const AO3ListingScreen: React.FC<Props> = ({ url, title, showHeader = true, onGr
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={[styles.container, contentContainerTopPadding ? { paddingTop: contentContainerTopPadding } : null]}>
       {showHeader ? (
         <View style={styles.header}>
           <Text style={styles.headerTitle} numberOfLines={1}>
@@ -668,10 +681,12 @@ const AO3ListingScreen: React.FC<Props> = ({ url, title, showHeader = true, onGr
           <Text style={styles.loadingText}>Reading blurbs...</Text>
         </View>
       ) : (
-        <SectionList
+        <Animated.SectionList
           sections={sections}
           keyExtractor={(item, index) => item.id || String(index)}
           contentContainerStyle={styles.listContent}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
           stickySectionHeadersEnabled={false}
           renderSectionHeader={({ section }) => (
             <Text style={styles.groupTitle}>{section.title}</Text>
@@ -714,7 +729,7 @@ const AO3ListingScreen: React.FC<Props> = ({ url, title, showHeader = true, onGr
         domStorageEnabled
         mixedContentMode="always"
       />
-    </SafeAreaView>
+    </View>
   );
 };
 

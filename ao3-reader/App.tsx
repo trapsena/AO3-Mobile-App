@@ -1,16 +1,32 @@
-import React, { useState } from "react";
-import { SafeAreaView, StatusBar, StyleSheet, ActivityIndicator, View, TouchableOpacity, Text, Platform } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import React, { useEffect, useRef, useState } from "react";
+import { Animated, StatusBar, StyleSheet, ActivityIndicator, View } from "react-native";
+import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import FanficReader from "./screens/FanficReader";
 import LoginScreen from "./screens/LoginScreen";
 import HomeScreen from "./screens/HomeScreen";
 import AO3HistoryScreen from "./screens/AO3HistoryScreen";
+import Ao3Header, { Ao3Tab, HEADER_CONTENT_HEIGHT } from "./components/Ao3Header";
 import { useAO3Session } from "./hooks/useao3Auth";
 
-const App: React.FC = () => {
+const AppContent: React.FC = () => {
   const { session, username, loading, login, logout } = useAO3Session();
-  const [activeTab, setActiveTab] = useState<"home" | "reader" | "history">("home");
+  const [activeTab, setActiveTab] = useState<Ao3Tab>("home");
   const [readerUrl, setReaderUrl] = useState<string | null>(null);
+  const insets = useSafeAreaInsets();
+  const headerHeight = HEADER_CONTENT_HEIGHT + insets.top;
+
+  // Shared scroll position that Ao3Header uses to hide/show itself. Reset it
+  // whenever the active tab changes so switching screens always reveals the
+  // header instead of leaving it wherever the previous screen's scroll left it.
+  const scrollY = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    scrollY.setValue(0);
+  }, [activeTab, scrollY]);
+
+  const handleScroll = Animated.event(
+    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+    { useNativeDriver: true },
+  );
 
   // Shared by HomeScreen and AO3HistoryScreen's work-card press handlers:
   // stash which fic to open, then actually switch to the Reader tab.
@@ -25,32 +41,44 @@ const App: React.FC = () => {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#000" />
-        <ActivityIndicator size="large" color="#fff" style={{ marginTop: 40 }} />
-      </SafeAreaView>
+      <View style={styles.container}>
+        <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+        <ActivityIndicator size="large" color="#fff" style={{ marginTop: insets.top + 40 }} />
+      </View>
     );
   }
 
   // if there's no session, show LoginScreen; once login completes, useAO3Session will update session
   if (!session) {
     return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#000" />
+      <View style={styles.container}>
+        <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
         <LoginScreen onLogin={login} />
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#000" />
+    <View style={styles.container}>
+      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
 
-      {/* Content */}
+      {/* Edge-to-edge content: each screen's list scrolls underneath the
+          transparent status bar, with its own top padding leaving room for
+          the header overlay below. */}
       {activeTab === "home" ? (
-        <HomeScreen username={username} onLogout={logout} onOpenReader={openReader} />
+        <HomeScreen
+          username={username}
+          onOpenReader={openReader}
+          onScroll={handleScroll}
+          contentContainerTopPadding={headerHeight}
+        />
       ) : activeTab === "history" ? (
-        <AO3HistoryScreen username={username!} onWorkPress={(work) => openReader(work.workUrl)} />
+        <AO3HistoryScreen
+          username={username!}
+          onWorkPress={(work) => openReader(work.workUrl)}
+          onScroll={handleScroll}
+          contentContainerTopPadding={headerHeight}
+        />
       ) : (
         <FanficReader
           // Remount per fic so the reader's internal chapter/index state
@@ -58,76 +86,34 @@ const App: React.FC = () => {
           key={readerUrl ?? "no-fic-selected"}
           initialUrl={readerUrl ?? undefined}
           onClose={() => setActiveTab("home")}
+          topInset={headerHeight}
         />
       )}
 
-      {/* Bottom Navigation */}
-      <View style={styles.tabBar}>
-        <TouchableOpacity
-          style={[styles.tabBtn, activeTab === "home" && styles.tabBtnActive]}
-          onPress={() => setActiveTab("home")}
-        >
-          <Ionicons name="home" size={24} color={activeTab === "home" ? "#7EC14B" : "#999"} />
-          <Text style={[styles.tabLabel, activeTab === "home" && styles.tabLabelActive]}>Home</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tabBtn, activeTab === "reader" && styles.tabBtnActive]}
-          onPress={() => setActiveTab("reader")}
-        >
-          <Ionicons name="book" size={24} color={activeTab === "reader" ? "#7EC14B" : "#999"} />
-          <Text style={[styles.tabLabel, activeTab === "reader" && styles.tabLabelActive]}>Reader</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tabBtn, activeTab === "history" && styles.tabBtnActive]}
-          onPress={() => setActiveTab("history")}
-        >
-          <Ionicons name="documents-outline" size={24} color={activeTab === "history" ? "#7EC14B" : "#999"} />
-          <Text style={[styles.tabLabel, activeTab === "history" && styles.tabLabelActive]}>History</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.tabBtn}
-          onPress={logout}
-        >
-          <Ionicons name="log-out" size={24} color="#f66" />
-          <Text style={[styles.tabLabel, { color: "#f66" }]}>Logout</Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+      {/* Independent absolute overlay above the scrollable content — replaces
+          the old bottom tab bar. Tapping the profile picture opens a
+          left-to-right drawer with the same navigation options. */}
+      <Ao3Header
+        username={username}
+        activeTab={activeTab}
+        onNavigate={setActiveTab}
+        onLogout={logout}
+        scrollY={scrollY}
+      />
+    </View>
   );
 };
+
+const App: React.FC = () => (
+  <SafeAreaProvider>
+    <AppContent />
+  </SafeAreaProvider>
+);
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#000",
-    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : 0,
-  },
-  tabBar: {
-    flexDirection: "row",
-    backgroundColor: "#111",
-    borderTopColor: "#333",
-    borderTopWidth: 1,
-    paddingBottom: 8,
-  },
-  tabBtn: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 8,
-  },
-  tabBtnActive: {
-    backgroundColor: "rgba(126, 193, 75, 0.1)",
-  },
-  tabLabel: {
-    color: "#999",
-    fontSize: 12,
-    marginTop: 4,
-  },
-  tabLabelActive: {
-    color: "#7EC14B",
   },
 });
 

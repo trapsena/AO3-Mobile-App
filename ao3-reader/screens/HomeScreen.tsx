@@ -1,17 +1,19 @@
 import React from "react";
-import { View, StyleSheet, TouchableOpacity, Text, Linking } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { View, StyleSheet, Text, NativeScrollEvent, NativeSyntheticEvent } from "react-native";
 import AO3ListingScreen, { AO3ListingItem } from "./AO3ListingScreen";
 
 interface Props {
   username: string | null;
-  onLogout: () => Promise<void>;
   // Called with a fic's URL when a work card is pressed. The caller (App.tsx)
   // owns the active tab, so it's the one that should switch to the Reader tab.
   onOpenReader?: (url: string) => void;
+  // Forwarded to AO3ListingScreen's list so the app's collapsible header can
+  // track this screen's scroll position.
+  onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  contentContainerTopPadding?: number;
 }
 
-const HomeScreen: React.FC<Props> = ({ username, onLogout, onOpenReader }) => {
+const HomeScreen: React.FC<Props> = ({ username, onOpenReader, onScroll, contentContainerTopPadding }) => {
   if (!username) {
     return (
       <View style={styles.container}>
@@ -21,18 +23,6 @@ const HomeScreen: React.FC<Props> = ({ username, onLogout, onOpenReader }) => {
   }
 
   const profileUrl = `https://archiveofourown.org/users/${encodeURIComponent(username)}`;
-
-  const handleLogout = async () => {
-    await onLogout();
-  };
-
-  const openInBrowser = async () => {
-    try {
-      await Linking.openURL(profileUrl);
-    } catch (e) {
-      console.warn("[HomeScreen] Could not open profile URL:", e);
-    }
-  };
 
   const handleItemPress = (item: AO3ListingItem) => {
     const url = item.work?.workUrl ?? item.bookmark?.workUrl;
@@ -45,29 +35,13 @@ const HomeScreen: React.FC<Props> = ({ username, onLogout, onOpenReader }) => {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.headerTextBlock}>
-          <Text style={styles.headerLabel}>Signed in as</Text>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {username}
-          </Text>
-        </View>
-
-        <View style={styles.headerActions}>
-          <TouchableOpacity onPress={openInBrowser} style={styles.iconBtn}>
-            <Ionicons name="open-outline" size={22} color="#fff" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleLogout} style={styles.iconBtn}>
-            <Ionicons name="log-out" size={22} color="#f66" />
-          </TouchableOpacity>
-        </View>
-      </View>
-
       <AO3ListingScreen
         url={profileUrl}
         title={`${username}'s AO3 dashboard`}
         showHeader={false}
         onItemPress={handleItemPress}
+        onScroll={onScroll}
+        contentContainerTopPadding={contentContainerTopPadding}
       />
     </View>
   );
@@ -77,38 +51,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#000",
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: "#111",
-    borderBottomColor: "#333",
-    borderBottomWidth: 1,
-  },
-  headerTextBlock: {
-    flex: 1,
-    paddingRight: 12,
-  },
-  headerLabel: {
-    color: "#9a9a9a",
-    fontSize: 12,
-    marginBottom: 2,
-  },
-  headerTitle: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  headerActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  iconBtn: {
-    padding: 8,
   },
   text: {
     color: "#fff",
