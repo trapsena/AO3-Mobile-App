@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
   SafeAreaView,
   SectionList,
   StyleSheet,
@@ -13,6 +14,7 @@ import AO3WorkBlurb, {
   AO3BookmarkData,
   AO3BlurbKind,
   AO3WorkBlurbData,
+  renderCommaLinkList,
 } from "../components/AO3WorkBlurb";
 
 const HiddenWebView = React.forwardRef<any, any>((props, ref) => (
@@ -519,6 +521,58 @@ const LISTING_INJECTED_JS = `
 true;
 `;
 
+// The bookmarker's own info (who bookmarked it, when, their personal tags,
+// their notes) is metadata *about the bookmark*, not the work itself — shown
+// as a separate box below the main card, the same way AO3HistoryScreen shows
+// "last visited" info below its work cards rather than inside them.
+const BookmarkMetaCard: React.FC<{ bookmark: AO3BookmarkData }> = ({ bookmark }) => {
+  const hasByline = !!(bookmark.bookmarker || bookmark.datetime);
+  const hasTags = !!(bookmark.userMeta && bookmark.userMeta.length > 0);
+  const hasNotes = !!bookmark.summary;
+
+  if (!hasByline && !hasTags && !hasNotes) return null;
+
+  return (
+    <View style={styles.bookmarkMetaCard}>
+      {hasByline ? (
+        <Text style={styles.bookmarkMetaByline}>
+          {bookmark.bookmarker ? (
+            <>
+              Bookmarked by{" "}
+              <Text
+                style={styles.bookmarkMetaLink}
+                onPress={bookmark.bookmarker.href ? () => Linking.openURL(bookmark.bookmarker!.href!) : undefined}
+              >
+                {bookmark.bookmarker.label}
+              </Text>
+            </>
+          ) : null}
+          {bookmark.datetime ? (
+            <Text style={styles.bookmarkMetaDate}>
+              {bookmark.bookmarker ? "  ·  " : ""}
+              {bookmark.datetime}
+            </Text>
+          ) : null}
+        </Text>
+      ) : null}
+
+      {hasTags ? (
+        <View style={styles.bookmarkMetaBlock}>
+          <Text style={styles.bookmarkMetaLabel}>Bookmarker's Tags</Text>
+          {renderCommaLinkList(bookmark.userMeta, "muted")}
+        </View>
+      ) : null}
+
+      {hasNotes ? (
+        <View style={styles.bookmarkMetaBlock}>
+          <Text style={styles.bookmarkMetaLabel}>Notes</Text>
+          <Text style={styles.bookmarkMetaNotes}>{bookmark.summary}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+};
+
 const AO3ListingScreen: React.FC<Props> = ({ url, title, showHeader = true, onGroupsLoaded, onItemPress }) => {
   const webRef = useRef<any>(null);
   const lastPayloadRef = useRef<string | null>(null);
@@ -630,6 +684,10 @@ const AO3ListingScreen: React.FC<Props> = ({ url, title, showHeader = true, onGr
                 bookmark={entry.bookmark}
                 onPressWork={onItemPress ? handlePressWork : undefined}
               />
+
+              {entry.kind === "bookmark" && entry.bookmark ? (
+                <BookmarkMetaCard bookmark={entry.bookmark} />
+              ) : null}
             </View>
           )}
           initialNumToRender={6}
@@ -704,6 +762,41 @@ const styles = StyleSheet.create({
   },
   blurbWrap: {
     width: "100%",
+  },
+  bookmarkMetaCard: {
+    marginTop: 8,
+    backgroundColor: "#161616",
+    borderWidth: 1,
+    borderColor: "#262626",
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  bookmarkMetaByline: {
+    color: "#c7c7c7",
+    fontSize: 13,
+  },
+  bookmarkMetaLink: {
+    color: "#7ec14b",
+    fontWeight: "700",
+  },
+  bookmarkMetaDate: {
+    color: "#8b8b8b",
+  },
+  bookmarkMetaBlock: {
+    gap: 4,
+  },
+  bookmarkMetaLabel: {
+    color: "#8c8c8c",
+    fontSize: 11,
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+  },
+  bookmarkMetaNotes: {
+    color: "#efefef",
+    fontSize: 14,
+    lineHeight: 20,
   },
   emptyState: {
     padding: 24,

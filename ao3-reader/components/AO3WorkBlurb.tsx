@@ -395,8 +395,10 @@ const renderStringList = (
 
 // Same comma-separated inline layout as renderStringList, but for links that
 // should actually be tappable (e.g. a bookmarker's own tags) — each item
-// opens its href, or defers to onPress/onPressTag when provided.
-const renderCommaLinkList = (
+// opens its href, or defers to onPress/onPressTag when provided. Exported
+// since bookmark-specific metadata (like this) now renders outside the card,
+// in whichever screen composes it (see AO3ListingScreen's bookmark meta box).
+export const renderCommaLinkList = (
   items?: AO3Link[],
   tone: "muted" | "warning" | "accent" = "muted",
   onPress?: (item: AO3Link) => void,
@@ -443,8 +445,12 @@ const AO3WorkBlurb: React.FC<Props> = ({ kind = "work", work, bookmark, onPressW
   const rating = !isBookmark ? work?.rating : undefined;
   const status = !isBookmark ? work?.status : bookmark?.status;
   const bookmarkStatusIcon = bookmark?.bookmarkStatusIcon;
-  const bookmarker = bookmark?.bookmarker;
   const title = data.title;
+  // The card's byline is always "by [the fic's author]" — for a bookmark,
+  // that's the underlying work's author (bookmark.workAuthor), matching how
+  // AO3 itself shows it. "Bookmarked by [person]" is bookmark-specific
+  // metadata and belongs in a separate box below the card, not here.
+  const author = !isBookmark ? work?.author : bookmark?.workAuthor;
   const workUrl = data.workUrl;
   const tags = data.tags;
   const fandoms = data.fandoms;
@@ -473,32 +479,18 @@ const AO3WorkBlurb: React.FC<Props> = ({ kind = "work", work, bookmark, onPressW
             {title}
           </Text>
 
-          {!isBookmark && work?.author ? (
+          {author ? (
             <Pressable
               onPress={
                 onPressAuthor
-                  ? () => onPressAuthor(work.author!)
-                  : work.author.href
-                    ? () => openUrl(work.author?.href)
+                  ? () => onPressAuthor(author)
+                  : author.href
+                    ? () => openUrl(author.href)
                     : undefined
               }
             >
               <Text style={styles.byline} numberOfLines={2}>
-                by <Text style={styles.bylineAuthor}>{work.author.label}</Text>
-              </Text>
-            </Pressable>
-          ) : isBookmark && bookmarker ? (
-            <Pressable
-              onPress={
-                onPressAuthor
-                  ? () => onPressAuthor(bookmarker)
-                  : bookmarker.href
-                    ? () => openUrl(bookmarker.href)
-                    : undefined
-              }
-            >
-              <Text style={styles.byline} numberOfLines={2}>
-                bookmarked by <Text style={styles.bylineAuthor}>{bookmarker.label}</Text>
+                by <Text style={styles.bylineAuthor}>{author.label}</Text>
               </Text>
             </Pressable>
           ) : null}
@@ -508,7 +500,6 @@ const AO3WorkBlurb: React.FC<Props> = ({ kind = "work", work, bookmark, onPressW
         <View style={styles.headerMeta}>
           {isBookmark ? <BookmarkStatusBlock icon={bookmarkStatusIcon} count={bookmark?.count} /> : null}
           {!isBookmark && work?.publishedAt ? <Text style={styles.date}>{work.publishedAt}</Text> : null}
-          {isBookmark && bookmark?.datetime ? <Text style={styles.date}>{bookmark.datetime}</Text> : null}
         </View>
       </View>
 
@@ -530,16 +521,9 @@ const AO3WorkBlurb: React.FC<Props> = ({ kind = "work", work, bookmark, onPressW
         </View>
       ) : null}
 
-      {isBookmark && bookmark?.userMeta && bookmark.userMeta.length > 0 ? (
+      {!isBookmark && summary ? (
         <View style={styles.summaryBlock}>
-          <Text style={styles.sectionLabel}>Bookmarker's Tags</Text>
-          {renderCommaLinkList(bookmark.userMeta, "muted", (item) => onPressTag?.(item, "bookmarkerTags"))}
-        </View>
-      ) : null}
-
-      {summary ? (
-        <View style={styles.summaryBlock}>
-          <Text style={styles.sectionLabel}>{isBookmark ? "Notes" : "Summary"}</Text>
+          <Text style={styles.sectionLabel}>Summary</Text>
           {summary}
         </View>
       ) : null}
