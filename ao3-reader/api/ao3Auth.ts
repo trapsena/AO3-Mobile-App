@@ -36,6 +36,27 @@ function buildCookieHeaderFromCookies(cookies: { [key: string]: string }): strin
     .join("; ");
 }
 
+async function saveResponseCookies(response: Response) {
+  const setCookieHeader = response.headers.get("set-cookie");
+  if (!setCookieHeader) return;
+
+  const responseCookies = extractCookies(setCookieHeader);
+  if (Object.keys(responseCookies).length === 0) return;
+
+  try {
+    const saved = await AsyncStorage.getItem(COOKIES_KEY);
+    const savedCookies = saved ? JSON.parse(saved) : {};
+    const nextCookies = { ...savedCookies, ...responseCookies };
+    await AsyncStorage.setItem(COOKIES_KEY, JSON.stringify(nextCookies));
+
+    if (responseCookies[SESSION_COOKIE_NAME]) {
+      await AsyncStorage.setItem(SESSION_KEY, buildCookieHeaderFromCookies(nextCookies));
+    }
+  } catch (e) {
+    console.warn("[ao3Auth] saveResponseCookies: Error saving response cookies:", e);
+  }
+}
+
 async function clearStoredAO3Auth() {
   const keys = await AsyncStorage.getAllKeys();
   const staleSessionKeys = keys.filter((key) => {
@@ -183,6 +204,8 @@ export async function fetchWithSession(url: string, init: RequestInit = {}): Pro
     credentials: init.credentials ?? "omit",
     headers,
   });
+
+  await saveResponseCookies(res);
 
   console.log("[ao3Auth] fetchWithSession response", {
     url,

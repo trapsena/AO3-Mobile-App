@@ -126,6 +126,60 @@ async function fetchHistoryHtml(url: string): Promise<string | null> {
   }
 }
 
+const decodeHtmlAttribute = (value?: string | null) =>
+  (value ?? "")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const getAttr = (html: string, name: string) => {
+  const match = html.match(new RegExp(`\\b${escapeRegExp(name)}=["']([^"']*)["']`, "i"));
+  return match ? decodeHtmlAttribute(match[1]) : undefined;
+};
+
+const getInputValue = (formHtml: string, name: string) => {
+  const inputMatch = formHtml.match(
+    new RegExp(`<input\\b(?=[^>]*\\bname=["']${escapeRegExp(name)}["'])[^>]*>`, "i"),
+  );
+  return inputMatch ? getAttr(inputMatch[0], "value") : undefined;
+};
+
+const toAbsoluteAO3Url = (href?: string) => {
+  if (!href) return undefined;
+  if (/^https?:\/\//i.test(href)) return href;
+  if (href.startsWith("/")) return `https://archiveofourown.org${href}`;
+  return `https://archiveofourown.org/${href}`;
+};
+
+const extractDeleteFormFromHtml = (html: string, item: AO3ReadingItem) => {
+  const forms = html.match(/<form\b[\s\S]*?<\/form>/gi) ?? [];
+
+  for (const form of forms) {
+    const className = getAttr(form, "class") ?? "";
+    if (!/\bajax-remove\b/.test(className)) continue;
+
+    const readingId = getInputValue(form, "reading");
+    if (readingId !== item.meta.readingId) continue;
+
+    return {
+      deleteUrl: toAbsoluteAO3Url(getAttr(form, "action")),
+      readingId,
+      authenticityToken: getInputValue(form, "authenticity_token"),
+    };
+  }
+
+  return null;
+};
+
+async function refreshDeleteForm(currentUrl: string, item: AO3ReadingItem) {
+  const html = await fetchHistoryHtml(currentUrl);
+  return html ? extractDeleteFormFromHtml(html, item) : null;
+}
+
 /* ------------------------------------------------------------------ */
 /* Hidden WebView (HTML -> structured data extractor)                  */
 /* ------------------------------------------------------------------ */
@@ -600,33 +654,51 @@ const AO3HistoryScreen: React.FC<Props> = ({ username, title, showHeader = true,
         onPress: async () => {
           setRemovingIds((prev) => new Set(prev).add(item.id));
 
-          const body = new URLSearchParams();
-          body.append("_method", "delete");
-          if (item.meta.authenticityToken) {
-            body.append("authenticity_token", item.meta.authenticityToken);
-          }
-          body.append("reading", item.meta.readingId!);
-          body.append("commit", "Delete from History");
-
-          const requestInit: RequestInit = {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: body.toString(),
-          };
-
-          console.log("[AO3HistoryScreen] Deleting reading item — request", {
-            title: item.work.title,
-            deleteUrl: item.meta.deleteUrl,
-            readingId: item.meta.readingId,
-            hasToken: !!item.meta.authenticityToken,
-            body: body.toString(),
-          });
-
           try {
+            const freshForm = await refreshDeleteForm(currentUrl, item);
+            const deleteUrl = freshForm?.deleteUrl ?? item.meta.deleteUrl;
+            const readingId = freshForm?.readingId ?? item.meta.readingId;
+            const authenticityToken = freshForm?.authenticityToken ?? item.meta.authenticityToken;
+
+            if (!deleteUrl || !readingId || !authenticityToken) {
+              console.warn("[AO3HistoryScreen] Delete skipped — missing refreshed form fields", {
+                deleteUrl,
+                readingId,
+                hasToken: !!authenticityToken,
+              });
+              Alert.alert("Couldn't remove", "AO3 did not provide a fresh delete token. Reload this list and try again.");
+              return;
+            }
+
+            const body = new URLSearchParams();
+            body.append("_method", "delete");
+            body.append("authenticity_token", authenticityToken);
+            body.append("reading", readingId);
+            body.append("commit", "Delete from History");
+
+            const requestInit: RequestInit = {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+                Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                Referer: currentUrl,
+              },
+              body: body.toString(),
+            };
+
+            console.log("[AO3HistoryScreen] Deleting reading item — request", {
+              title: item.work.title,
+              deleteUrl,
+              readingId,
+              hadCachedToken: !!item.meta.authenticityToken,
+              usedFreshToken: !!freshForm?.authenticityToken,
+              body: body.toString(),
+            });
+
             // fetchWithSession now accepts an optional init and attaches the
             // AsyncStorage-backed session cookie regardless of method, so this
             // POST is authenticated the same way the GET listing fetch is.
-            const res = await fetchWithSession(item.meta.deleteUrl!, requestInit);
+            const res = await fetchWithSession(deleteUrl, requestInit);
 
             console.log("[AO3HistoryScreen] Delete response", {
               status: res.status,
@@ -682,7 +754,7 @@ const AO3HistoryScreen: React.FC<Props> = ({ username, title, showHeader = true,
         },
       },
     ]);
-  }, []);
+  }, [currentUrl]);
 
   const handleClearHistory = useCallback(() => {
     Alert.alert("Clear Entire History", "This opens AO3's confirmation page in your browser.", [
