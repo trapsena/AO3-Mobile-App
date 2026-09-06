@@ -4,6 +4,8 @@ const BASE_URL = "https://archiveofourown.org";
 const SESSION_KEY = "ao3_session_cookie";
 const USERNAME_KEY = "ao3_username";
 const COOKIES_KEY = "ao3_all_cookies";
+const SESSION_COOKIE_NAME = "_otwarchive_session";
+const AUTH_STORAGE_KEYS = [SESSION_KEY, USERNAME_KEY, COOKIES_KEY];
 
 /**
  * Extract specific cookies from set-cookie header string
@@ -18,13 +20,36 @@ function extractCookies(setCookieHeader: string | null): { [key: string]: string
   
   cookieStrings.forEach((cookieStr) => {
     const parts = cookieStr.split(";")[0].trim();
-    const [name, value] = parts.split("=");
+    const [name, ...valueParts] = parts.split("=");
+    const value = valueParts.join("=");
     if (name && value) {
       cookies[name.trim()] = value.trim();
     }
   });
   
   return cookies;
+}
+
+function buildCookieHeaderFromCookies(cookies: { [key: string]: string }): string {
+  return Object.entries(cookies)
+    .map(([name, value]) => `${name}=${value}`)
+    .join("; ");
+}
+
+async function clearStoredAO3Auth() {
+  const keys = await AsyncStorage.getAllKeys();
+  const staleSessionKeys = keys.filter((key) => {
+    const normalized = key.toLowerCase();
+    return (
+      AUTH_STORAGE_KEYS.includes(key) ||
+      normalized.includes("otwarchive") ||
+      normalized.includes("_otwarchive_session")
+    );
+  });
+
+  if (staleSessionKeys.length > 0) {
+    await AsyncStorage.multiRemove(staleSessionKeys);
+  }
 }
 
 /**
@@ -36,24 +61,35 @@ async function buildCookieHeader(): Promise<string> {
   
   try {
     const cookies = JSON.parse(saved);
-    return Object.entries(cookies)
-      .map(([name, value]) => `${name}=${value}`)
-      .join("; ");
+    return buildCookieHeaderFromCookies(cookies);
   } catch (e) {
     console.warn("[ao3Auth] buildCookieHeader: Error parsing saved cookies:", e);
     return "";
   }
 }
 
-export async function getCSRFToken(): Promise<string | null> {
-  const res = await fetch(`${BASE_URL}/users/login`);
+async function getLoginForm(): Promise<{ token: string | null; cookies: { [key: string]: string } }> {
+  const res = await fetch(`${BASE_URL}/users/login`, {
+    credentials: "omit",
+  });
   const html = await res.text();
   const match = html.match(/name="authenticity_token" value="([^"]+)"/);
-  return match ? match[1] : null;
+  return {
+    token: match ? match[1] : null,
+    cookies: extractCookies(res.headers.get("set-cookie")),
+  };
+}
+
+export async function getCSRFToken(): Promise<string | null> {
+  const { token } = await getLoginForm();
+  return token;
 }
 
 export async function loginAO3(username: string, password: string): Promise<boolean> {
-  const token = await getCSRFToken();
+  await clearStoredAO3Auth();
+
+  const loginForm = await getLoginForm();
+  const token = loginForm.token;
   if (!token) throw new Error("Could not fetch CSRF token");
 
   const formData = new URLSearchParams();
@@ -66,41 +102,47 @@ export async function loginAO3(username: string, password: string): Promise<bool
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
+      ...(Object.keys(loginForm.cookies).length > 0
+        ? { Cookie: buildCookieHeaderFromCookies(loginForm.cookies) }
+        : {}),
     },
     body: formData.toString(),
+    credentials: "omit",
     redirect: "manual",
   });
 
   const cookies = response.headers.get("set-cookie");
-  if (cookies && cookies.includes("_otwarchive_session")) {
+  if (cookies && cookies.includes(SESSION_COOKIE_NAME) && response.status >= 300 && response.status < 400) {
     // Extract all cookies and store them
-    const allCookies = extractCookies(cookies);
+    const allCookies = { ...loginForm.cookies, ...extractCookies(cookies) };
+    const cookieHeader = buildCookieHeaderFromCookies(allCookies);
+
+    const loggedUsername = await getLoggedUsername(cookieHeader);
+    if (!loggedUsername || loggedUsername.toLowerCase() !== username.trim().toLowerCase()) {
+      console.warn("[ao3Auth] Login verification failed; clearing stale AO3 session", {
+        requestedUsername: username,
+        loggedUsername,
+      });
+      await clearStoredAO3Auth();
+      return false;
+    }
+
     await AsyncStorage.setItem(COOKIES_KEY, JSON.stringify(allCookies));
     
     // Also store the full cookie string for backward compatibility
     await AsyncStorage.setItem(SESSION_KEY, cookies);
+    await AsyncStorage.setItem(USERNAME_KEY, loggedUsername);
 
     console.log("[ao3Auth] Cookies saved:", Object.keys(allCookies).join(", "));
     console.log("[ao3Auth] Saved cookies:", allCookies);
 
-    // Extract username from the 302 redirect (GET /users/login)
-    try {
-      const loggedUsername = await getLoggedUsername();
-      if (loggedUsername) {
-        await AsyncStorage.setItem(USERNAME_KEY, loggedUsername);
-        const profileUrl = `https://archiveofourown.org/users/${encodeURIComponent(loggedUsername)}`;
-        console.log("[ao3Auth] Login successful. Username:", loggedUsername);
-        console.log("[ao3Auth] Profile URL:", profileUrl);
-      } else {
-        console.warn("[ao3Auth] Login succeeded but could not get username from 302 redirect");
-      }
-    } catch (e) {
-      console.warn("[ao3Auth] Error getting username after login:", e);
-    }
+    const profileUrl = `https://archiveofourown.org/users/${encodeURIComponent(loggedUsername)}`;
+    console.log("[ao3Auth] Login successful. Username:", loggedUsername);
+    console.log("[ao3Auth] Profile URL:", profileUrl);
 
     // Try to extract the session token value for easy terminal display
     try {
-      const m = cookies.match(/_otwarchive_session=([^;]+)/);
+      const m = cookies.match(new RegExp(`${SESSION_COOKIE_NAME}=([^;]+)`));
       const token = m ? m[1] : cookies;
       // This will appear in Metro/console when running the app
       console.log("[ao3Auth] Login successful. Session token:", token);
@@ -138,6 +180,7 @@ export async function fetchWithSession(url: string, init: RequestInit = {}): Pro
 
   const res = await fetch(url, {
     ...init,
+    credentials: init.credentials ?? "omit",
     headers,
   });
 
@@ -153,9 +196,7 @@ export async function fetchWithSession(url: string, init: RequestInit = {}): Pro
 }
 
 export async function logoutAO3() {
-  await AsyncStorage.removeItem(SESSION_KEY);
-  await AsyncStorage.removeItem(USERNAME_KEY);
-  await AsyncStorage.removeItem(COOKIES_KEY);
+  await clearStoredAO3Auth();
 }
 
 export async function getUsername(): Promise<string | null> {
@@ -171,8 +212,8 @@ export async function setUsername(username: string): Promise<void> {
  * The AO3 server responds with a 302 redirect to /users/<username>.
  * We capture that redirect location and extract the username.
  */
-export async function getLoggedUsername(): Promise<string | null> {
-  const cookieHeader = await buildCookieHeader();
+export async function getLoggedUsername(cookieHeaderOverride?: string): Promise<string | null> {
+  const cookieHeader = cookieHeaderOverride ?? await buildCookieHeader();
   if (!cookieHeader) {
     console.warn("[ao3Auth] getLoggedUsername: No cookies available to send");
     return null;
@@ -187,6 +228,7 @@ export async function getLoggedUsername(): Promise<string | null> {
         Cookie: cookieHeader,
         Accept: "text/html",
       },
+      credentials: "omit",
     });
 
     if (!res || !res.ok) {

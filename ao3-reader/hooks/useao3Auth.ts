@@ -37,9 +37,16 @@ export function useAO3Session() {
         setUsername(user);
         // Log the loaded session cookie (or token) so it's visible in the terminal/Metro logs
         console.log("[useAO3Session] login succeeded, session:", cookie, "username:", user);
+      } else {
+        setSession(null);
+        setUsername(null);
+        throw new Error("Invalid AO3 username or password");
       }
     } catch (err) {
       console.error(err);
+      setSession(null);
+      setUsername(null);
+      throw err;
     } finally {
       setLoading(false);
     }
