@@ -5,13 +5,20 @@ import FanficReader from "./screens/FanficReader";
 import LoginScreen from "./screens/LoginScreen";
 import HomeScreen from "./screens/HomeScreen";
 import AO3HistoryScreen from "./screens/AO3HistoryScreen";
-import Ao3Header, { Ao3Tab, HEADER_CONTENT_HEIGHT } from "./components/Ao3Header";
+import Ao3Header, {
+  Ao3Tab,
+  HEADER_CONTENT_HEIGHT,
+  ReaderHeaderInfo,
+  HistoryHeaderInfo,
+} from "./components/Ao3Header";
 import { useAO3Session } from "./hooks/useao3Auth";
 
 const AppContent: React.FC = () => {
   const { session, username, loading, login, logout } = useAO3Session();
   const [activeTab, setActiveTab] = useState<Ao3Tab>("home");
   const [readerUrl, setReaderUrl] = useState<string | null>(null);
+  const [readerHeaderInfo, setReaderHeaderInfo] = useState<ReaderHeaderInfo | null>(null);
+  const [historyHeaderInfo, setHistoryHeaderInfo] = useState<HistoryHeaderInfo | null>(null);
   const insets = useSafeAreaInsets();
   const headerHeight = HEADER_CONTENT_HEIGHT + insets.top;
 
@@ -78,6 +85,7 @@ const AppContent: React.FC = () => {
           onWorkPress={(work) => openReader(work.workUrl)}
           onScroll={handleScroll}
           contentContainerTopPadding={headerHeight}
+          onHeaderActionsChange={setHistoryHeaderInfo}
         />
       ) : (
         <FanficReader
@@ -87,17 +95,21 @@ const AppContent: React.FC = () => {
           initialUrl={readerUrl ?? undefined}
           onClose={() => setActiveTab("home")}
           topInset={headerHeight}
+          onHeaderActionsChange={setReaderHeaderInfo}
         />
       )}
 
       {/* Independent absolute overlay above the scrollable content — replaces
           the old bottom tab bar. Tapping the profile picture opens a
-          left-to-right drawer with the same navigation options. */}
+          left-to-right drawer with the same navigation options. Its title
+          and action buttons swap to match whichever screen is active. */}
       <Ao3Header
         username={username}
         activeTab={activeTab}
         onNavigate={setActiveTab}
         onLogout={logout}
+        readerHeaderInfo={readerHeaderInfo}
+        historyHeaderInfo={historyHeaderInfo}
         scrollY={scrollY}
       />
     </View>

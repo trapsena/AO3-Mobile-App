@@ -18,6 +18,26 @@ import { getUserIconUrl } from "../api/ao3Auth";
 
 export type Ao3Tab = "home" | "reader" | "history";
 
+// Published by FanficReader (via onHeaderActionsChange) while the Reader tab
+// is active, so Ao3Header can render the fic/chapter title and the
+// TTS/comments/settings actions that used to live in ReaderHeader's own
+// top bar, without owning any of that screen's state itself.
+export interface ReaderHeaderInfo {
+  fanficTitle: string;
+  chapterTitle: string;
+  isTtsActive: boolean;
+  onToggleTts: () => void;
+  onOpenComments: () => void;
+  onOpenSettings: () => void;
+}
+
+// Published by AO3HistoryScreen (via onHeaderActionsChange) while the
+// History tab is active, replacing that screen's own inline title bar.
+export interface HistoryHeaderInfo {
+  title: string;
+  onClearHistory: () => void;
+}
+
 interface Ao3HeaderProps {
   username: string | null;
   activeTab: Ao3Tab;
@@ -28,6 +48,9 @@ interface Ao3HeaderProps {
   // header derives its own hide/show offset from this via diffClamp, so the
   // screen only has to forward its ScrollView/FlatList's onScroll here.
   scrollY: Animated.Value;
+  // Only rendered when activeTab === "reader" / "history" respectively.
+  readerHeaderInfo?: ReaderHeaderInfo | null;
+  historyHeaderInfo?: HistoryHeaderInfo | null;
 }
 
 export const HEADER_CONTENT_HEIGHT = 52;
@@ -45,6 +68,8 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
   onNavigate,
   onLogout,
   scrollY,
+  readerHeaderInfo,
+  historyHeaderInfo,
 }) => {
   const insets = useSafeAreaInsets();
   const headerHeight = HEADER_CONTENT_HEIGHT + insets.top;
@@ -146,11 +171,51 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
           )}
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          {title || (username ? `Signed in as ${username}` : "AO3 Reader")}
-        </Text>
-
-        <View style={styles.avatarBtn} />
+        {activeTab === "reader" && readerHeaderInfo ? (
+          <>
+            <View style={styles.titleBlock}>
+              <Text style={styles.readerFanficTitle} numberOfLines={1}>
+                {readerHeaderInfo.fanficTitle || "Reading"}
+              </Text>
+              <Text style={styles.readerChapterTitle} numberOfLines={1}>
+                {readerHeaderInfo.chapterTitle}
+              </Text>
+            </View>
+            <View style={styles.actionsRow}>
+              <TouchableOpacity onPress={readerHeaderInfo.onToggleTts} style={styles.actionBtn}>
+                <Ionicons
+                  name="headset"
+                  size={20}
+                  color={readerHeaderInfo.isTtsActive ? "#4cd137" : "#fff"}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={readerHeaderInfo.onOpenComments} style={styles.actionBtn}>
+                <Ionicons name="chatbubble-outline" size={20} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={readerHeaderInfo.onOpenSettings} style={styles.actionBtn}>
+                <Ionicons name="settings-outline" size={20} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </>
+        ) : activeTab === "history" && historyHeaderInfo ? (
+          <>
+            <Text style={[styles.headerTitle, styles.headerTitleLeft]} numberOfLines={1}>
+              {historyHeaderInfo.title || "Reading History"}
+            </Text>
+            <View style={styles.actionsRow}>
+              <TouchableOpacity onPress={historyHeaderInfo.onClearHistory} style={styles.actionBtn}>
+                <Ionicons name="trash-outline" size={20} color="#f66" />
+              </TouchableOpacity>
+            </View>
+          </>
+        ) : (
+          <>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {title || (username ? `Signed in as ${username}` : "AO3 Reader")}
+            </Text>
+            <View style={styles.avatarBtn} />
+          </>
+        )}
       </Animated.View>
 
       <Modal visible={menuOpen} transparent animationType="none" onRequestClose={closeMenu}>
@@ -249,6 +314,33 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
     paddingHorizontal: 8,
+  },
+  headerTitleLeft: {
+    textAlign: "left",
+  },
+  titleBlock: {
+    flex: 1,
+    paddingHorizontal: 10,
+  },
+  readerFanficTitle: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  readerChapterTitle: {
+    color: "#aaa",
+    fontSize: 12,
+    marginTop: 1,
+  },
+  actionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  actionBtn: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
   },
   modalRoot: {
     flex: 1,

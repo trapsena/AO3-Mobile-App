@@ -17,6 +17,7 @@ import { WebView, WebViewMessageEvent } from "react-native-webview";
 import { Ionicons } from "@expo/vector-icons";
 import { fetchWithSession } from "../api/ao3Auth";
 import AO3WorkBlurb, { AO3WorkBlurbData } from "../components/AO3WorkBlurb";
+import type { HistoryHeaderInfo } from "../components/Ao3Header";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -61,12 +62,15 @@ interface AO3Pagination {
 interface Props {
   username: string;
   title?: string;
-  showHeader?: boolean;
   onWorkPress?: (work: AO3WorkBlurbData) => void;
   // Forwarded straight to the FlatList's onScroll so a parent (e.g. the app's
   // collapsible header) can track this screen's scroll position.
   onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
   contentContainerTopPadding?: number;
+  // Published whenever this screen's title or clear-history handler changes
+  // (and cleared with `null` on unmount) so the app's global Ao3Header can
+  // render this screen's title bar instead of this component drawing its own.
+  onHeaderActionsChange?: (info: HistoryHeaderInfo | null) => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -549,10 +553,10 @@ true;
 const AO3HistoryScreen: React.FC<Props> = ({
   username,
   title,
-  showHeader = true,
   onWorkPress,
   onScroll,
   contentContainerTopPadding = 0,
+  onHeaderActionsChange,
 }) => {
   const webRef = useRef<any>(null);
   const lastPayloadRef = useRef<string | null>(null);
@@ -782,6 +786,22 @@ const AO3HistoryScreen: React.FC<Props> = ({
     ]);
   }, [username]);
 
+  useEffect(() => {
+    onHeaderActionsChange?.({
+      title: pageTitle || title || "Reading History",
+      onClearHistory: handleClearHistory,
+    });
+  }, [pageTitle, title, handleClearHistory, onHeaderActionsChange]);
+
+  // Separate from the effect above so the "clear on unmount" cleanup doesn't
+  // also fire (and briefly flicker the header) on every title update — this
+  // one's dependency array never changes, so its cleanup only runs once,
+  // when the screen actually unmounts.
+  useEffect(() => {
+    return () => onHeaderActionsChange?.(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const numericPages = useMemo(
     () => (pagination?.pages || []).filter((p) => !p.isPrev && !p.isNext),
     [pagination],
@@ -792,17 +812,6 @@ const AO3HistoryScreen: React.FC<Props> = ({
 
   return (
     <View style={[styles.container, contentContainerTopPadding ? { paddingTop: contentContainerTopPadding } : null]}>
-      {showHeader ? (
-        <View style={styles.header}>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {pageTitle || title || "Reading History"}
-          </Text>
-          <TouchableOpacity onPress={handleClearHistory} style={styles.clearBtn}>
-            <Ionicons name="trash-outline" size={18} color="#f66" />
-          </TouchableOpacity>
-        </View>
-      ) : null}
-
       <View style={styles.tabRow}>
         <TouchableOpacity
           style={[styles.tabBtn, tab === "history" && styles.tabBtnActive]}
@@ -972,26 +981,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#000",
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#222",
-    backgroundColor: "#0d0d0d",
-  },
-  headerTitle: {
-    flex: 1,
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "700",
-    paddingRight: 12,
-  },
-  clearBtn: {
-    padding: 6,
   },
   tabRow: {
     flexDirection: "row",

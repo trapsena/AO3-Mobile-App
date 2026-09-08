@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useImperativeHandle, forwardRef } from "react";
 import {
   View,
   Text,
@@ -9,11 +9,10 @@ import {
   ActivityIndicator,
   TextInput,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import * as Speech from "expo-speech";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Settings, X } from "lucide-react-native";
+import { X } from "lucide-react-native";
 import CommentsDrawer from "./CommentsDrawer";
 import type { TTSProvider } from "./geminiTTS";
 
@@ -43,9 +42,12 @@ const GEMINI_VOICES = [
   "Aoede",
 ];
 
+export interface ReaderHeaderHandle {
+  openSettings: () => void;
+  openComments: () => void;
+}
+
 interface ReaderHeaderProps {
-  fanficTitle: string;
-  chapterTitle: string;
   fontSize: number;
   lineSpacing: number;
   paragraphSpacing: number;
@@ -57,24 +59,28 @@ interface ReaderHeaderProps {
     paragraphSpacing?: number;
     padding?: number;
   }) => void;
-  onToggleTts?: () => void;
-  isTtsActive?: boolean;
 }
 
-const ReaderHeader: React.FC<ReaderHeaderProps> = ({
-  fanficTitle,
-  chapterTitle,
+// Renders no visible bar of its own — the fic/chapter title and the
+// TTS/comments/settings buttons that used to live in a header row here now
+// live in the app's global Ao3Header, which calls back into this component
+// (via the ref) to actually open the settings modal / comments drawer this
+// component still owns.
+const ReaderHeader = forwardRef<ReaderHeaderHandle, ReaderHeaderProps>(({
   fontSize,
   lineSpacing,
   paragraphSpacing,
   padding,
   currentUrl = "",
   onConfigChange,
-  onToggleTts,
-  isTtsActive = false,
-}) => {
+}, ref) => {
   const [visible, setVisible] = useState(false);
   const [commentsVisible, setCommentsVisible] = useState(false);
+
+  useImperativeHandle(ref, () => ({
+    openSettings: () => setVisible(true),
+    openComments: () => setCommentsVisible(true),
+  }));
   const [activeTab, setActiveTab] = useState<"text" | "tts">("text");
   const [voices, setVoices] = useState<Voice[]>([]);
   const [loadingVoices, setLoadingVoices] = useState(false);
@@ -181,32 +187,6 @@ const ReaderHeader: React.FC<ReaderHeaderProps> = ({
 
   return (
     <>
-      {/* 🧭 Header principal */}
-      <View style={styles.header}>
-        <View style={{ flex: 1 }}>
-          <Text numberOfLines={1} style={styles.fanficTitle}>
-            {fanficTitle}
-          </Text>
-          <Text numberOfLines={1} style={styles.chapterTitle}>
-            {chapterTitle}
-          </Text>
-        </View>
-
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <TouchableOpacity onPress={() => onToggleTts && onToggleTts()} style={{ marginRight: 4 }}>
-            <Ionicons name="headset" size={20} color={isTtsActive ? "#4cd137" : "#fff"} />
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={() => setCommentsVisible(true)}>
-            <Ionicons name="chatbubble-outline" size={20} color="#fff" />
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={() => setVisible(true)}>
-            <Settings color="#fff" size={22} />
-          </TouchableOpacity>
-        </View>
-      </View>
-
       {/* ⚙️ Modal de configuração */}
       <Modal
         visible={visible}
@@ -472,28 +452,10 @@ const ReaderHeader: React.FC<ReaderHeaderProps> = ({
       />
     </>
   );
-};
+});
+ReaderHeader.displayName = "ReaderHeader";
 
 const styles = StyleSheet.create({
-  header: {
-    backgroundColor: "#111",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#333",
-  },
-  fanficTitle: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  chapterTitle: {
-    color: "#aaa",
-    fontSize: 14,
-  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.7)",

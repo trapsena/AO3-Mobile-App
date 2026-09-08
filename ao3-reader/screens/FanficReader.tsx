@@ -14,9 +14,10 @@ import { WebView, WebViewMessageEvent } from "react-native-webview";
 import ChapterView from "../components/ChapterView";
 import ChapterControls from "../components/ChapterControls";
 import { Ionicons } from "@expo/vector-icons";
-import ReaderHeader from "../components/ReaderHeader";
+import ReaderHeader, { ReaderHeaderHandle } from "../components/ReaderHeader";
 import SpeechControls from "../components/SpeechControls";
 import { fetchWithSession, getSessionCookie } from "../api/ao3Auth";
+import type { ReaderHeaderInfo } from "../components/Ao3Header";
 
 
 
@@ -171,10 +172,16 @@ interface Props {
   // Space to leave at the top for the app's collapsible header overlay,
   // which stays static (not scroll-linked) while the reader is active.
   topInset?: number;
+  // Published whenever this screen's title/chapter/TTS state changes (and
+  // cleared with `null` on unmount) so the app's global Ao3Header can render
+  // this screen's title + TTS/comments/settings actions instead of this
+  // component drawing its own header bar.
+  onHeaderActionsChange?: (info: ReaderHeaderInfo | null) => void;
 }
 
-const FanficReader: React.FC<Props> = ({ initialUrl, onClose, topInset = 0 }) => {
+const FanficReader: React.FC<Props> = ({ initialUrl, onClose, topInset = 0, onHeaderActionsChange }) => {
   const webRef = useRef<any>(null);
+  const readerHeaderRef = useRef<ReaderHeaderHandle>(null);
   // NOTE: this only seeds the *initial* URL. If a parent keeps this component
   // mounted and just changes `initialUrl` to open a different fic, that won't
   // do anything by itself — render with `key={initialUrl}` at the call site
@@ -373,6 +380,30 @@ const FanficReader: React.FC<Props> = ({ initialUrl, onClose, topInset = 0 }) =>
     return () => clearTimeout(handle);
   }, [hydrated, currentUrl, index, currentTtsIndex, title, chapterTitle, initialUrl]);
 
+  // Publish this screen's title/TTS state (and a way to reach the settings
+  // modal / comments drawer this component still owns via ReaderHeader's
+  // ref) so the app's global Ao3Header can render them. Cleared on unmount
+  // so switching away from the Reader tab doesn't leave stale info behind.
+  useEffect(() => {
+    onHeaderActionsChange?.({
+      fanficTitle: title,
+      chapterTitle,
+      isTtsActive: ttsVisible,
+      onToggleTts: () => setTtsVisible((v) => !v),
+      onOpenComments: () => readerHeaderRef.current?.openComments(),
+      onOpenSettings: () => readerHeaderRef.current?.openSettings(),
+    });
+  }, [title, chapterTitle, ttsVisible, onHeaderActionsChange]);
+
+  // Separate from the effect above so the "clear on unmount" cleanup doesn't
+  // also fire (and briefly flicker the header) on every title/TTS update —
+  // this one's dependency array never changes, so its cleanup only runs once,
+  // when the screen actually unmounts.
+  useEffect(() => {
+    return () => onHeaderActionsChange?.(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleMessage = (e: WebViewMessageEvent) => {
     try {
       const data = JSON.parse(e.nativeEvent.data);
@@ -447,10 +478,11 @@ const FanficReader: React.FC<Props> = ({ initialUrl, onClose, topInset = 0 }) =>
         </TouchableOpacity>
       ) : null}
 
-      {/* Header componentizado */}
+      {/* Owns the settings modal + comments drawer only — title and the
+          buttons that open them now live in the app's global Ao3Header,
+          which reaches back into this via readerHeaderRef. */}
       <ReaderHeader
-        fanficTitle={title}
-        chapterTitle={chapterTitle}
+        ref={readerHeaderRef}
         fontSize={fontSize}
         lineSpacing={lineHeight}
         paragraphSpacing={paragraphSpacing}
@@ -462,8 +494,6 @@ const FanficReader: React.FC<Props> = ({ initialUrl, onClose, topInset = 0 }) =>
           if (cfg.padding !== undefined) setPadding(cfg.padding);
           if (cfg.paragraphSpacing !== undefined) setParagraphSpacing(cfg.paragraphSpacing);
         }}
-        onToggleTts={() => setTtsVisible((v) => !v)}
-        isTtsActive={ttsVisible}
       />
 
       {loading && <ActivityIndicator size="large" color="#fff" style={{ marginTop: 40 }} />}
