@@ -467,7 +467,12 @@ const FanficReader: React.FC<Props> = ({ initialUrl, onClose, topInset = 0, onHe
   };
 
   return (
-    <View style={[styles.container, { paddingTop: topInset }]}>
+    // No paddingTop here: this box must stay full-screen (a background
+    // layer) so ChapterView's WebView underneath can scroll its content
+    // behind the app's absolutely-positioned header rather than starting
+    // after it. The header-height reserve is instead baked into the
+    // WebView's own HTML padding, via ChapterView's `topInset` prop below.
+    <View style={styles.container}>
       {onClose ? (
         <TouchableOpacity
           onPress={handleClose}
@@ -496,7 +501,7 @@ const FanficReader: React.FC<Props> = ({ initialUrl, onClose, topInset = 0, onHe
         }}
       />
 
-      {loading && <ActivityIndicator size="large" color="#fff" style={{ marginTop: 40 }} />}
+      {loading && <ActivityIndicator size="large" color="#fff" style={{ marginTop: topInset + 40 }} />}
 
       <ChapterView
         htmlContent={rawContentHtml}
@@ -505,6 +510,7 @@ const FanficReader: React.FC<Props> = ({ initialUrl, onClose, topInset = 0, onHe
         lineHeight={lineHeight}
         paragraphSpacing={paragraphSpacing}
         padding={padding}
+        topInset={topInset}
         currentIndex={currentTtsIndex}
         onParagraphPress={(i) => {
           // sync paragraph click with TTS index and open controls if closed

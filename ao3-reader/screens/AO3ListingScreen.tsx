@@ -663,7 +663,10 @@ const AO3ListingScreen: React.FC<Props> = ({
   };
 
   return (
-    <View style={[styles.container, contentContainerTopPadding ? { paddingTop: contentContainerTopPadding } : null]}>
+    // No paddingTop here: this box must stay full-screen (a background
+    // layer) so the SectionList underneath can scroll its content behind
+    // the app's absolutely-positioned header rather than starting after it.
+    <View style={styles.container}>
       {showHeader ? (
         <View style={styles.header}>
           <Text style={styles.headerTitle} numberOfLines={1}>
@@ -676,7 +679,7 @@ const AO3ListingScreen: React.FC<Props> = ({
       ) : null}
 
       {loading ? (
-        <View style={styles.loading}>
+        <View style={[styles.loading, { paddingTop: contentContainerTopPadding }]}>
           <ActivityIndicator size="large" color="#7ec14b" />
           <Text style={styles.loadingText}>Reading blurbs...</Text>
         </View>
@@ -684,7 +687,15 @@ const AO3ListingScreen: React.FC<Props> = ({
         <Animated.SectionList
           sections={sections}
           keyExtractor={(item, index) => item.id || String(index)}
-          contentContainerStyle={styles.listContent}
+          // The header-height reserve lives here, on the scrollable content
+          // itself, not on the outer View — so the list's own box still
+          // spans the full screen and can be scrolled/pulled up underneath
+          // the header with no gap, while the first rendered card still
+          // starts safely below it.
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingTop: styles.listContent.padding + (contentContainerTopPadding || 0) },
+          ]}
           onScroll={onScroll}
           scrollEventThrottle={16}
           stickySectionHeadersEnabled={false}

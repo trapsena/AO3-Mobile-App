@@ -9,6 +9,11 @@ interface Props {
   lineHeight?: number; // pixel value
   paragraphSpacing?: number; // px
   padding?: number; // px
+  // Extra top padding (on top of `padding`) reserved for the app's
+  // absolutely-positioned header overlay, which floats above this WebView
+  // rather than pushing it down — so the header stays a foreground layer
+  // while this content still spans, and can scroll behind it, edge to edge.
+  topInset?: number;
   // index of paragraph to highlight
   currentIndex?: number;
   // receive paragraph click events from webview
@@ -21,6 +26,7 @@ const ChapterView: React.FC<Props> = ({
   lineHeight = 24,
   paragraphSpacing = 15,
   padding = 16,
+  topInset = 0,
   currentIndex = 0,
   onParagraphPress,
 }) => {
@@ -33,7 +39,14 @@ const ChapterView: React.FC<Props> = ({
     const css = `
       * { box-sizing: border-box; }
       html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow-x: hidden; }
-      body { color:#fff; background:#000; font-size:${fontSize}px; line-height:${lineHeight}px; padding:${padding}px; overflow-y: auto; }
+      body {
+        color:#fff; background:#000; font-size:${fontSize}px; line-height:${lineHeight}px;
+        overflow-y: auto;
+        padding-top: ${padding + topInset}px;
+        padding-right: ${padding}px;
+        padding-bottom: ${padding}px;
+        padding-left: ${padding}px;
+      }
       p{ margin-bottom:${paragraphSpacing}px; }
       p.current{ outline:2px solid rgba(76,209,55,0.25); padding:6px; background-color: rgba(76,209,55,0.04); }
       em,i{ font-style:italic; }
