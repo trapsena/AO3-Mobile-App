@@ -789,9 +789,11 @@ const AO3HistoryScreen: React.FC<Props> = ({
   useEffect(() => {
     onHeaderActionsChange?.({
       title: pageTitle || title || "Reading History",
+      activeSubTab: tab,
+      onSelectSubTab: handleTabPress,
       onClearHistory: handleClearHistory,
     });
-  }, [pageTitle, title, handleClearHistory, onHeaderActionsChange]);
+  }, [pageTitle, title, tab, handleTabPress, handleClearHistory, onHeaderActionsChange]);
 
   // Separate from the effect above so the "clear on unmount" cleanup doesn't
   // also fire (and briefly flicker the header) on every title update — this
@@ -811,26 +813,12 @@ const AO3HistoryScreen: React.FC<Props> = ({
     !!pagination && (!!pagination.prevHref || !!pagination.nextHref || numericPages.length > 1);
 
   return (
-    <View style={[styles.container, contentContainerTopPadding ? { paddingTop: contentContainerTopPadding } : null]}>
-      <View style={styles.tabRow}>
-        <TouchableOpacity
-          style={[styles.tabBtn, tab === "history" && styles.tabBtnActive]}
-          onPress={() => handleTabPress("history")}
-        >
-          <Ionicons name="time-outline" size={16} color={tab === "history" ? "#000" : "#ddd"} />
-          <Text style={[styles.tabLabel, tab === "history" && styles.tabLabelActive]}>History</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tabBtn, tab === "to-read" && styles.tabBtnActive]}
-          onPress={() => handleTabPress("to-read")}
-        >
-          <Ionicons name="bookmark-outline" size={16} color={tab === "to-read" ? "#000" : "#ddd"} />
-          <Text style={[styles.tabLabel, tab === "to-read" && styles.tabLabelActive]}>Marked for Later</Text>
-        </TouchableOpacity>
-      </View>
-
+    // No paddingTop here: this box must stay full-screen (a background
+    // layer) so the FlatList underneath can scroll its content behind the
+    // app's absolutely-positioned header rather than starting after it.
+    <View style={styles.container}>
       {loading ? (
-        <View style={styles.loading}>
+        <View style={[styles.loading, { paddingTop: contentContainerTopPadding }]}>
           <ActivityIndicator size="large" color="#7ec14b" />
           <Text style={styles.loadingText}>
             {tab === "history" ? "Loading history..." : "Loading marked for later..."}
@@ -841,7 +829,15 @@ const AO3HistoryScreen: React.FC<Props> = ({
           ref={listRef}
           data={items}
           keyExtractor={(item, index) => item.id || String(index)}
-          contentContainerStyle={styles.listContent}
+          // The header-height reserve lives here, on the scrollable content
+          // itself, not on the outer View — so the list's own box still
+          // spans the full screen and can be scrolled/pulled up underneath
+          // the header with no gap, while the first rendered card still
+          // starts safely below it.
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingTop: styles.listContent.padding + (contentContainerTopPadding || 0) },
+          ]}
           onScroll={onScroll}
           scrollEventThrottle={16}
           refreshControl={
@@ -981,38 +977,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#000",
-  },
-  tabRow: {
-    flexDirection: "row",
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#1c1c1c",
-    backgroundColor: "#0a0a0a",
-  },
-  tabBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: "#141414",
-    borderWidth: 1,
-    borderColor: "#2a2a2a",
-  },
-  tabBtnActive: {
-    backgroundColor: "#7ec14b",
-    borderColor: "#7ec14b",
-  },
-  tabLabel: {
-    color: "#ddd",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  tabLabelActive: {
-    color: "#000",
   },
   loading: {
     flex: 1,

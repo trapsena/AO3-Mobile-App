@@ -32,9 +32,13 @@ export interface ReaderHeaderInfo {
 }
 
 // Published by AO3HistoryScreen (via onHeaderActionsChange) while the
-// History tab is active, replacing that screen's own inline title bar.
+// History tab is active, replacing that screen's own inline title bar AND
+// its History / Marked-for-Later tab row — both now live in Ao3Header, the
+// same way the Reader tab's TTS toggle does.
 export interface HistoryHeaderInfo {
   title: string;
+  activeSubTab: "history" | "to-read";
+  onSelectSubTab: (tab: "history" | "to-read") => void;
   onClearHistory: () => void;
 }
 
@@ -199,14 +203,55 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
           </>
         ) : activeTab === "history" && historyHeaderInfo ? (
           <>
-            <Text style={[styles.headerTitle, styles.headerTitleLeft]} numberOfLines={1}>
-              {historyHeaderInfo.title || "Reading History"}
-            </Text>
-            <View style={styles.actionsRow}>
-              <TouchableOpacity onPress={historyHeaderInfo.onClearHistory} style={styles.actionBtn}>
-                <Ionicons name="trash-outline" size={20} color="#f66" />
+            <View style={styles.historyTabsRow}>
+              <TouchableOpacity
+                style={[
+                  styles.historyTabBtn,
+                  historyHeaderInfo.activeSubTab === "history" && styles.historyTabBtnActive,
+                ]}
+                onPress={() => historyHeaderInfo.onSelectSubTab("history")}
+              >
+                <Ionicons
+                  name="time-outline"
+                  size={14}
+                  color={historyHeaderInfo.activeSubTab === "history" ? "#000" : "#ddd"}
+                />
+                <Text
+                  style={[
+                    styles.historyTabLabel,
+                    historyHeaderInfo.activeSubTab === "history" && styles.historyTabLabelActive,
+                  ]}
+                  numberOfLines={1}
+                >
+                  History
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.historyTabBtn,
+                  historyHeaderInfo.activeSubTab === "to-read" && styles.historyTabBtnActive,
+                ]}
+                onPress={() => historyHeaderInfo.onSelectSubTab("to-read")}
+              >
+                <Ionicons
+                  name="bookmark-outline"
+                  size={14}
+                  color={historyHeaderInfo.activeSubTab === "to-read" ? "#000" : "#ddd"}
+                />
+                <Text
+                  style={[
+                    styles.historyTabLabel,
+                    historyHeaderInfo.activeSubTab === "to-read" && styles.historyTabLabelActive,
+                  ]}
+                  numberOfLines={1}
+                >
+                  Marked for Later
+                </Text>
               </TouchableOpacity>
             </View>
+            <TouchableOpacity onPress={historyHeaderInfo.onClearHistory} style={styles.actionBtn}>
+              <Ionicons name="trash-outline" size={20} color="#f66" />
+            </TouchableOpacity>
           </>
         ) : (
           <>
@@ -341,6 +386,38 @@ const styles = StyleSheet.create({
     height: 36,
     alignItems: "center",
     justifyContent: "center",
+  },
+  historyTabsRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 8,
+  },
+  historyTabBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#1c1c1c",
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+    flexShrink: 1,
+  },
+  historyTabBtnActive: {
+    backgroundColor: "#7ec14b",
+    borderColor: "#7ec14b",
+  },
+  historyTabLabel: {
+    color: "#ddd",
+    fontSize: 11,
+    fontWeight: "600",
+    flexShrink: 1,
+  },
+  historyTabLabelActive: {
+    color: "#000",
   },
   modalRoot: {
     flex: 1,
