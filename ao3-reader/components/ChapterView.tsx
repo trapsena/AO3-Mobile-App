@@ -18,6 +18,11 @@ interface Props {
   currentIndex?: number;
   // receive paragraph click events from webview
   onParagraphPress?: (index: number) => void;
+  // Fired with the WebView's own scroll offset (its `body.scrollTop`,
+  // since `body` — not `window` — is the actual scrolling element here) so
+  // a parent can drive scroll-linked UI, e.g. the app's collapsible header,
+  // the same way it would from a native ScrollView/FlatList's onScroll.
+  onScroll?: (y: number) => void;
 }
 
 const ChapterView: React.FC<Props> = ({
@@ -29,6 +34,7 @@ const ChapterView: React.FC<Props> = ({
   topInset = 0,
   currentIndex = 0,
   onParagraphPress,
+  onScroll,
 }) => {
   const webRef = useRef<any>(null);
 
@@ -94,6 +100,23 @@ const ChapterView: React.FC<Props> = ({
         // rebind after dynamic changes
         new MutationObserver(bindClicks).observe(document.body, { childList: true, subtree: true });
 
+        // Report scroll position back to RN so it can drive scroll-linked
+        // UI (e.g. hiding/showing the app's header) the same way a native
+        // ScrollView's onScroll would. \`body\`, not \`window\`, is the actual
+        // scrolling element (it's the one with overflow-y:auto below), so
+        // that's what has to be listened on and read from.
+        (function(){
+          var ticking = false;
+          document.body.addEventListener('scroll', function(){
+            if (ticking) return;
+            ticking = true;
+            requestAnimationFrame(function(){
+              try{ window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'scroll', y: document.body.scrollTop })); }catch(e){}
+              ticking = false;
+            });
+          }, { passive: true });
+        })();
+
         true;
       })();
     `;
@@ -134,6 +157,8 @@ const ChapterView: React.FC<Props> = ({
             const data = JSON.parse(e.nativeEvent.data);
             if (data.type === 'paragraphClick' && typeof onParagraphPress === 'function') {
               onParagraphPress(data.index);
+            } else if (data.type === 'scroll' && typeof onScroll === 'function') {
+              onScroll(data.y);
             }
           } catch (err) { /* ignore */ }
         }}

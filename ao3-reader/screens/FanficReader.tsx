@@ -177,9 +177,20 @@ interface Props {
   // this screen's title + TTS/comments/settings actions instead of this
   // component drawing its own header bar.
   onHeaderActionsChange?: (info: ReaderHeaderInfo | null) => void;
+  // Forwarded from ChapterView's WebView scroll position (its `body`
+  // scrollTop, reported via postMessage) so the app's collapsible header
+  // can hide/show while reading the same way it does on the other tabs,
+  // which drive it from a native ScrollView/FlatList's onScroll instead.
+  onScroll?: (y: number) => void;
 }
 
-const FanficReader: React.FC<Props> = ({ initialUrl, onClose, topInset = 0, onHeaderActionsChange }) => {
+const FanficReader: React.FC<Props> = ({
+  initialUrl,
+  onClose,
+  topInset = 0,
+  onHeaderActionsChange,
+  onScroll,
+}) => {
   const webRef = useRef<any>(null);
   const readerHeaderRef = useRef<ReaderHeaderHandle>(null);
   // NOTE: this only seeds the *initial* URL. If a parent keeps this component
@@ -511,6 +522,7 @@ const FanficReader: React.FC<Props> = ({ initialUrl, onClose, topInset = 0, onHe
         paragraphSpacing={paragraphSpacing}
         padding={padding}
         topInset={topInset}
+        onScroll={onScroll}
         currentIndex={currentTtsIndex}
         onParagraphPress={(i) => {
           // sync paragraph click with TTS index and open controls if closed

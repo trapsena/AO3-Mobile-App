@@ -35,6 +35,14 @@ const AppContent: React.FC = () => {
     { useNativeDriver: true },
   );
 
+  // FanficReader's content scrolls inside a WebView rather than a native
+  // ScrollView/FlatList, so it can't feed `scrollY` via Animated.event like
+  // the other tabs do — it reports its scroll offset as a plain number
+  // (via postMessage) instead, which this just applies directly.
+  const handleContentScroll = (y: number) => {
+    scrollY.setValue(y);
+  };
+
   // Shared by HomeScreen and AO3HistoryScreen's work-card press handlers:
   // stash which fic to open, then actually switch to the Reader tab.
   const openReader = (url?: string) => {
@@ -96,6 +104,7 @@ const AppContent: React.FC = () => {
           onClose={() => setActiveTab("home")}
           topInset={headerHeight}
           onHeaderActionsChange={setReaderHeaderInfo}
+          onScroll={handleContentScroll}
         />
       )}
 
