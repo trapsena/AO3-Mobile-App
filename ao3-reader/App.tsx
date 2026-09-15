@@ -6,6 +6,7 @@ import LoginScreen from "./screens/LoginScreen";
 import HomeScreen from "./screens/HomeScreen";
 import AO3HistoryScreen from "./screens/AO3HistoryScreen";
 import AO3BookmarksScreen from "./screens/AO3BookmarksScreen";
+import AO3WorksScreen from "./screens/AO3WorksScreen";
 import AO3ListingScreen from "./screens/AO3ListingScreen";
 import Ao3Header, {
   Ao3Tab,
@@ -14,6 +15,7 @@ import Ao3Header, {
   HistoryHeaderInfo,
   BookmarksHeaderInfo,
   ProfileHeaderInfo,
+  WorksHeaderInfo,
 } from "./components/Ao3Header";
 import { AO3Link } from "./components/AO3WorkBlurb";
 import { extractUsernameFromUsersUrl } from "./api/ao3Bookmarks";
@@ -28,6 +30,7 @@ interface NavEntry {
   readerUrl: string | null;
   bookmarksUsername: string | null;
   profileUsername: string | null;
+  worksUsername: string | null;
 }
 
 const AppContent: React.FC = () => {
@@ -36,6 +39,7 @@ const AppContent: React.FC = () => {
   const [readerUrl, setReaderUrl] = useState<string | null>(null);
   const [bookmarksUsername, setBookmarksUsername] = useState<string | null>(null);
   const [profileUsername, setProfileUsername] = useState<string | null>(null);
+  const [worksUsername, setWorksUsername] = useState<string | null>(null);
   // Mutated directly (not state) — popping/pushing it should never itself
   // trigger a re-render; the setActiveTab/setReaderUrl/etc. calls around it
   // already do that. Kept in a ref (rather than plain state) specifically so
@@ -46,6 +50,7 @@ const AppContent: React.FC = () => {
   const [historyHeaderInfo, setHistoryHeaderInfo] = useState<HistoryHeaderInfo | null>(null);
   const [bookmarksHeaderInfo, setBookmarksHeaderInfo] = useState<BookmarksHeaderInfo | null>(null);
   const [profileHeaderInfo, setProfileHeaderInfo] = useState<ProfileHeaderInfo | null>(null);
+  const [worksHeaderInfo, setWorksHeaderInfo] = useState<WorksHeaderInfo | null>(null);
   const insets = useSafeAreaInsets();
   const headerHeight = HEADER_CONTENT_HEIGHT + insets.top;
 
@@ -74,7 +79,7 @@ const AppContent: React.FC = () => {
   // navigation away from it — shared by openReader/openBookmarks/openProfile
   // below so `goBack` can later return to this exact screen.
   const pushNavHistory = () => {
-    navHistoryRef.current.push({ tab: activeTab, readerUrl, bookmarksUsername, profileUsername });
+    navHistoryRef.current.push({ tab: activeTab, readerUrl, bookmarksUsername, profileUsername, worksUsername });
   };
 
   // Shared by HomeScreen and AO3HistoryScreen's work-card press handlers:
@@ -117,6 +122,18 @@ const AppContent: React.FC = () => {
     setActiveTab("profile");
   };
 
+  // Called when the "Works (N)" button (next to a profile's Works section
+  // heading) is tapped — navigates to that user's full works listing in-app.
+  const openWorks = (targetUsername?: string) => {
+    if (!targetUsername) {
+      console.warn("[App] openWorks called without a username, ignoring");
+      return;
+    }
+    pushNavHistory();
+    setWorksUsername(targetUsername);
+    setActiveTab("works");
+  };
+
   // Drawer nav items (Home/Reader/History) are top-level destinations reached
   // via the menu rather than by drilling into content — treated as a fresh
   // start, so they reset the back stack instead of adding to it.
@@ -146,6 +163,7 @@ const AppContent: React.FC = () => {
     if (entry.tab === "reader") setReaderUrl(entry.readerUrl);
     else if (entry.tab === "bookmarks") setBookmarksUsername(entry.bookmarksUsername);
     else if (entry.tab === "profile") setProfileUsername(entry.profileUsername);
+    else if (entry.tab === "works") setWorksUsername(entry.worksUsername);
   }, []);
 
   if (loading) {
@@ -181,6 +199,7 @@ const AppContent: React.FC = () => {
           onScroll={handleScroll}
           contentContainerTopPadding={headerHeight}
           onPressBookmarker={openBookmarks}
+          onPressWorks={openWorks}
           onPressAuthor={openProfile}
         />
       ) : activeTab === "history" ? (
@@ -217,12 +236,26 @@ const AppContent: React.FC = () => {
           showHeader={false}
           onItemPress={(item) => openReader(item.work?.workUrl ?? item.bookmark?.workUrl)}
           onPressBookmarker={openBookmarks}
+          onPressWorks={openWorks}
           onPressAuthor={openProfile}
           currentUsername={username}
           onClose={goBack}
           onScroll={handleScroll}
           contentContainerTopPadding={headerHeight}
           onHeaderActionsChange={setProfileHeaderInfo}
+        />
+      ) : activeTab === "works" ? (
+        <AO3WorksScreen
+          // Remount per user so switching whose works we're viewing resets
+          // pagination/scroll cleanly, the same way Bookmarks/Profile do.
+          key={worksUsername ?? "no-works-user"}
+          username={worksUsername ?? ""}
+          onClose={goBack}
+          onWorkPress={(work) => openReader(work.workUrl)}
+          onPressAuthor={openProfile}
+          onScroll={handleScroll}
+          contentContainerTopPadding={headerHeight}
+          onHeaderActionsChange={setWorksHeaderInfo}
         />
       ) : (
         <FanficReader
@@ -251,6 +284,7 @@ const AppContent: React.FC = () => {
         historyHeaderInfo={historyHeaderInfo}
         bookmarksHeaderInfo={bookmarksHeaderInfo}
         profileHeaderInfo={profileHeaderInfo}
+        worksHeaderInfo={worksHeaderInfo}
         scrollY={scrollY}
       />
     </View>

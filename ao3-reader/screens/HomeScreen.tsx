@@ -15,6 +15,9 @@ interface Props {
   // Called with a username when a bookmark card's "Bookmarked by X" byline
   // is tapped, so the caller can navigate to that user's bookmarks page.
   onPressBookmarker?: (username: string) => void;
+  // Called with a username when the "Works (N)" button is tapped, so the
+  // caller can navigate to that user's full works listing.
+  onPressWorks?: (username: string) => void;
   // Called when a work/bookmark card's author byline is tapped, so the
   // caller can open that author's profile in-app.
   onPressAuthor?: (author: AO3Link) => void;
@@ -26,6 +29,7 @@ const HomeScreen: React.FC<Props> = ({
   onScroll,
   contentContainerTopPadding,
   onPressBookmarker,
+  onPressWorks,
   onPressAuthor,
 }) => {
   if (!username) {
@@ -57,6 +61,7 @@ const HomeScreen: React.FC<Props> = ({
         onScroll={onScroll}
         contentContainerTopPadding={contentContainerTopPadding}
         onPressBookmarker={onPressBookmarker}
+        onPressWorks={onPressWorks}
         onPressAuthor={onPressAuthor}
         currentUsername={username}
       />

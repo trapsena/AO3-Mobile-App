@@ -17,7 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getUserIconUrl } from "../api/ao3Auth";
 
-export type Ao3Tab = "home" | "reader" | "history" | "bookmarks" | "profile";
+export type Ao3Tab = "home" | "reader" | "history" | "bookmarks" | "profile" | "works";
 
 // Published by FanficReader (via onHeaderActionsChange) while the Reader tab
 // is active, so Ao3Header can render the fic/chapter title and the
@@ -57,6 +57,15 @@ export interface BookmarksHeaderInfo {
   onGoBack: () => void;
 }
 
+// Published by AO3WorksScreen (via onHeaderActionsChange) while the Works
+// screen is active — same shape and same reasoning as BookmarksHeaderInfo:
+// not a persistent nav tab, reached by tapping a "Works (N)" button
+// elsewhere, so the header's back button is what lets you return.
+export interface WorksHeaderInfo {
+  title: string;
+  onGoBack: () => void;
+}
+
 // Published by AO3ListingScreen (via onHeaderActionsChange) while it's being
 // used to view someone's profile (the "profile" tab) rather than embedded in
 // Home — same shape and same reasoning as BookmarksHeaderInfo above.
@@ -85,11 +94,12 @@ interface Ao3HeaderProps {
   // header derives its own hide/show offset from this via diffClamp, so the
   // screen only has to forward its ScrollView/FlatList's onScroll here.
   scrollY: Animated.Value;
-  // Only rendered when activeTab === "reader" / "history" / "bookmarks" / "profile" respectively.
+  // Only rendered when activeTab === "reader" / "history" / "bookmarks" / "profile" / "works" respectively.
   readerHeaderInfo?: ReaderHeaderInfo | null;
   historyHeaderInfo?: HistoryHeaderInfo | null;
   bookmarksHeaderInfo?: BookmarksHeaderInfo | null;
   profileHeaderInfo?: ProfileHeaderInfo | null;
+  worksHeaderInfo?: WorksHeaderInfo | null;
 }
 
 export const HEADER_CONTENT_HEIGHT = 52;
@@ -111,6 +121,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
   historyHeaderInfo,
   bookmarksHeaderInfo,
   profileHeaderInfo,
+  worksHeaderInfo,
 }) => {
   const insets = useSafeAreaInsets();
   const headerHeight = HEADER_CONTENT_HEIGHT + insets.top;
@@ -199,6 +210,8 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
       bookmarksHeaderInfo.onGoBack();
     } else if (activeTab === "profile" && profileHeaderInfo?.onGoBack) {
       profileHeaderInfo.onGoBack();
+    } else if (activeTab === "works" && worksHeaderInfo?.onGoBack) {
+      worksHeaderInfo.onGoBack();
     } else {
       onNavigate("home");
     }
@@ -422,6 +435,13 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
           <>
             <Text style={styles.headerTitle} numberOfLines={1}>
               {bookmarksHeaderInfo.title || "Bookmarks"}
+            </Text>
+            <View style={styles.avatarBtn} />
+          </>
+        ) : activeTab === "works" && worksHeaderInfo ? (
+          <>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {worksHeaderInfo.title || "Works"}
             </Text>
             <View style={styles.avatarBtn} />
           </>

@@ -96,6 +96,10 @@ interface Props {
   // is tapped, so the caller can navigate to that user's bookmarks page
   // in-app instead of opening it in the external browser.
   onPressBookmarker?: (username: string) => void;
+  // Called with a username when the "Works (N)" button (next to the Works
+  // section heading) is tapped, so the caller can navigate to that user's
+  // full works listing in-app.
+  onPressWorks?: (username: string) => void;
   // The currently logged-in user (from the session), used only to decide
   // whether to show the Edit/Delete/Add to Collection/Share actions on a
   // bookmark — those only make sense (and only actually exist server-side)
@@ -650,6 +654,7 @@ const LISTING_INJECTED_JS = `
         fandoms: collectFandoms(),
         groups: collectProfileGroups(),
         csrfToken: csrfMeta ? csrfMeta.getAttribute("content") : null,
+        worksCount: findSectionTotal("#user-works"),
         bookmarksCount: findSectionTotal("#user-bookmarks"),
       }));
     } catch (err) {
@@ -672,6 +677,7 @@ const AO3ListingScreen: React.FC<Props> = ({
   onScroll,
   contentContainerTopPadding = 0,
   onPressBookmarker,
+  onPressWorks,
   currentUsername,
   onPressAuthor,
   onClose,
@@ -690,6 +696,7 @@ const AO3ListingScreen: React.FC<Props> = ({
   const [sourceHtml, setSourceHtml] = useState<string | null>(null);
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
+  const [worksCount, setWorksCount] = useState<number | null>(null);
   const [bookmarksCount, setBookmarksCount] = useState<number | null>(null);
 
   // Derived from `url` rather than a dedicated prop, so this keeps working
@@ -767,6 +774,7 @@ const AO3ListingScreen: React.FC<Props> = ({
         setProfileActions(nextActions);
         setIsSubscribed(!!nextActions?.subscribe?.isSubscribed);
         if (payload.csrfToken) setCsrfToken(payload.csrfToken);
+        if (typeof payload.worksCount === "number") setWorksCount(payload.worksCount);
         if (typeof payload.bookmarksCount === "number") setBookmarksCount(payload.bookmarksCount);
       } else if (payload.type === "listingError") {
         console.warn("[AO3ListingScreen] Listing extraction failed:", payload.error);
@@ -1046,7 +1054,16 @@ const AO3ListingScreen: React.FC<Props> = ({
               <Text style={styles.groupTitle} numberOfLines={1}>
                 {section.title}
               </Text>
-              {section.key === "bookmarks" && profileUsername && onPressBookmarker ? (
+              {section.key === "works" && profileUsername && onPressWorks ? (
+                <TouchableOpacity
+                  style={styles.bookmarksCountBtn}
+                  onPress={() => onPressWorks(profileUsername)}
+                >
+                  <Text style={styles.bookmarksCountBtnText} numberOfLines={1}>
+                    Works ({worksCount ?? 0})
+                  </Text>
+                </TouchableOpacity>
+              ) : section.key === "bookmarks" && profileUsername && onPressBookmarker ? (
                 <TouchableOpacity
                   style={styles.bookmarksCountBtn}
                   onPress={() => onPressBookmarker(profileUsername)}
