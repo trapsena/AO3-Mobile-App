@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, StatusBar, StyleSheet, ActivityIndicator, View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import FanficReader from "./screens/FanficReader";
@@ -70,6 +70,15 @@ const AppContent: React.FC = () => {
     setActiveTab("bookmarks");
   };
 
+  // Shared "back to Home" handler for History/Bookmarks/Reader's onClose —
+  // memoized (setActiveTab is itself stable) so it has a STABLE identity
+  // across renders. Each of those screens lists `onClose` in the dependency
+  // array of the effect that publishes its onGoBack to Ao3Header; passing a
+  // fresh inline arrow function here on every render would make that
+  // dependency look "changed" every time, re-running the effect, which
+  // calls back into this component's state — an infinite render loop.
+  const goHome = useCallback(() => setActiveTab("home"), []);
+
   if (loading) {
     return (
       <View style={styles.container}>
@@ -107,6 +116,7 @@ const AppContent: React.FC = () => {
       ) : activeTab === "history" ? (
         <AO3HistoryScreen
           username={username!}
+          onClose={goHome}
           onWorkPress={(work) => openReader(work.workUrl)}
           onScroll={handleScroll}
           contentContainerTopPadding={headerHeight}
@@ -120,7 +130,7 @@ const AppContent: React.FC = () => {
           key={bookmarksUsername ?? "no-bookmarks-user"}
           username={bookmarksUsername ?? ""}
           currentUsername={username}
-          onClose={() => setActiveTab("home")}
+          onClose={goHome}
           onWorkPress={(bookmark) => openReader(bookmark.workUrl)}
           onScroll={handleScroll}
           topInset={headerHeight}
@@ -132,7 +142,7 @@ const AppContent: React.FC = () => {
           // resets cleanly when a different work is opened.
           key={readerUrl ?? "no-fic-selected"}
           initialUrl={readerUrl ?? undefined}
-          onClose={() => setActiveTab("home")}
+          onClose={goHome}
           topInset={headerHeight}
           onHeaderActionsChange={setReaderHeaderInfo}
           onScroll={handleContentScroll}
@@ -140,9 +150,10 @@ const AppContent: React.FC = () => {
       )}
 
       {/* Independent absolute overlay above the scrollable content — replaces
-          the old bottom tab bar. Tapping the profile picture opens a
-          left-to-right drawer with the same navigation options. Its title
-          and action buttons swap to match whichever screen is active. */}
+          the old bottom tab bar. On Home, tapping the profile picture opens
+          a left-to-right drawer with the same navigation options; on every
+          other screen that same slot becomes a back button instead. Its
+          title and action buttons swap to match whichever screen is active. */}
       <Ao3Header
         username={username}
         activeTab={activeTab}

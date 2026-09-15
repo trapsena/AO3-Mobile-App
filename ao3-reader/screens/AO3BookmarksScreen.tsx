@@ -682,8 +682,9 @@ const AO3BookmarksScreen: React.FC<Props> = ({
   useEffect(() => {
     onHeaderActionsChange?.({
       title: pageTitle || title || `${username}'s Bookmarks`,
+      onGoBack: () => onClose?.(),
     });
-  }, [pageTitle, title, username, onHeaderActionsChange]);
+  }, [pageTitle, title, username, onClose, onHeaderActionsChange]);
 
   // Separate from the effect above so the "clear on unmount" cleanup doesn't
   // also fire (and briefly flicker the header) on every title update — this
@@ -707,16 +708,6 @@ const AO3BookmarksScreen: React.FC<Props> = ({
     // layer) so the FlatList underneath can scroll its content behind the
     // app's absolutely-positioned header rather than starting after it.
     <View style={styles.container}>
-      {onClose ? (
-        <TouchableOpacity
-          onPress={onClose}
-          style={[styles.backBtn, { top: topInset + 12 }]}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons name="arrow-back" size={22} color="#fff" />
-        </TouchableOpacity>
-      ) : null}
-
       {loading ? (
         <View style={[styles.loading, { paddingTop: topInset }]}>
           <ActivityIndicator size="large" color="#7ec14b" />
@@ -848,19 +839,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#000",
-  },
-  backBtn: {
-    position: "absolute",
-    left: 12,
-    zIndex: 20,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.55)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
   },
   loading: {
     flex: 1,

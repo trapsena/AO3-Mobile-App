@@ -62,6 +62,10 @@ interface AO3Pagination {
 interface Props {
   username: string;
   title?: string;
+  // Called when the header's back button is tapped (History isn't reached
+  // via the drawer's nav-item taps alone anymore — the header's avatar slot
+  // becomes a back button on any non-Home screen, this one included).
+  onClose?: () => void;
   onWorkPress?: (work: AO3WorkBlurbData) => void;
   // Forwarded straight to the FlatList's onScroll so a parent (e.g. the app's
   // collapsible header) can track this screen's scroll position.
@@ -553,6 +557,7 @@ true;
 const AO3HistoryScreen: React.FC<Props> = ({
   username,
   title,
+  onClose,
   onWorkPress,
   onScroll,
   contentContainerTopPadding = 0,
@@ -792,8 +797,9 @@ const AO3HistoryScreen: React.FC<Props> = ({
       activeSubTab: tab,
       onSelectSubTab: handleTabPress,
       onClearHistory: handleClearHistory,
+      onGoBack: () => onClose?.(),
     });
-  }, [pageTitle, title, tab, handleTabPress, handleClearHistory, onHeaderActionsChange]);
+  }, [pageTitle, title, tab, handleTabPress, handleClearHistory, onClose, onHeaderActionsChange]);
 
   // Separate from the effect above so the "clear on unmount" cleanup doesn't
   // also fire (and briefly flicker the header) on every title update — this

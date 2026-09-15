@@ -4,6 +4,7 @@ import {
   Easing,
   Image,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   StatusBar,
@@ -29,6 +30,10 @@ export interface ReaderHeaderInfo {
   onToggleTts: () => void;
   onOpenComments: () => void;
   onOpenSettings: () => void;
+  // Called instead of the generic "go back to Home" fallback, so the screen
+  // can do its own cleanup first (FanficReader flushes reading progress
+  // immediately before navigating away).
+  onGoBack: () => void;
 }
 
 // Published by AO3HistoryScreen (via onHeaderActionsChange) while the
@@ -40,14 +45,16 @@ export interface HistoryHeaderInfo {
   activeSubTab: "history" | "to-read";
   onSelectSubTab: (tab: "history" | "to-read") => void;
   onClearHistory: () => void;
+  onGoBack: () => void;
 }
 
 // Published by AO3BookmarksScreen (via onHeaderActionsChange) while the
 // Bookmarks screen is active — that screen isn't a persistent nav tab (it's
-// opened by tapping a "Bookmarked by X" byline elsewhere), so it just needs
-// a title here; its own in-screen back button handles returning.
+// opened by tapping a "Bookmarked by X" byline elsewhere); the header's own
+// back button (instead of the profile picture) is what lets you return.
 export interface BookmarksHeaderInfo {
   title: string;
+  onGoBack: () => void;
 }
 
 interface Ao3HeaderProps {
@@ -117,6 +124,8 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
     extrapolate: "clamp",
   });
 
+  const panelWidth = 280;
+
   const openMenu = () => {
     setMenuOpen(true);
   };
@@ -151,7 +160,119 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
     onLogout();
   };
 
-  const panelWidth = 280;
+  // The avatar (which opens the drawer) only makes sense on the Home/profile
+  // screen. Everywhere else, that same slot becomes a back button instead —
+  // each screen's own onGoBack lets it do cleanup first (e.g. FanficReader
+  // flushing reading progress); if a screen hasn't published one yet (e.g.
+  // its onHeaderActionsChange effect hasn't run on the very first frame
+  // after switching tabs), falling back to "go to Home" is still correct.
+  const handleGoBack = () => {
+    if (activeTab === "reader" && readerHeaderInfo?.onGoBack) {
+      readerHeaderInfo.onGoBack();
+    } else if (activeTab === "history" && historyHeaderInfo?.onGoBack) {
+      historyHeaderInfo.onGoBack();
+    } else if (activeTab === "bookmarks" && bookmarksHeaderInfo?.onGoBack) {
+      bookmarksHeaderInfo.onGoBack();
+    } else {
+      onNavigate("home");
+    }
+  };
+
+  // Baseline value of menuAnim captured at the start of a drag, so moves can
+  // be applied relative to wherever the panel already was (rather than
+  // jumping) — the same "stop, capture, offset" technique used for any
+  // interruptible drag-driven Animated.Value.
+  const dragBaseRef = useRef(0);
+
+  // Lets the already-open panel be dragged closed (or dragged back open if
+  // released before crossing the halfway point) by hand, in addition to the
+  // existing tap-the-backdrop / tap-a-nav-item ways of closing it. Only
+  // claims the gesture once real horizontal movement is seen, so ordinary
+  // taps on the nav items inside the panel still work normally.
+  const panelPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponder: (_evt, gesture) =>
+        Math.abs(gesture.dx) > 8 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
+      // The panel is full of TouchableOpacity nav items, which grab the
+      // responder immediately on touch-down (so they can show a press
+      // state). The plain (bubble-phase) handler above is only ever asked
+      // when nothing underneath already wants the touch, so it never fires
+      // for a drag that starts on top of one of those buttons — it's only
+      // reached for drags starting on the panel's own empty background.
+      // The capture-phase version below runs *before* that child gets a
+      // look, so it's what actually lets a real horizontal drag steal the
+      // gesture away from a nav item's press handling once it's clearly a
+      // swipe and not a tap.
+      onMoveShouldSetPanResponderCapture: (_evt, gesture) =>
+        Math.abs(gesture.dx) > 8 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        menuAnim.stopAnimation((value) => {
+          dragBaseRef.current = value;
+        });
+      },
+      onPanResponderMove: (_evt, gesture) => {
+        const next = dragBaseRef.current + gesture.dx / panelWidth;
+        menuAnim.setValue(Math.max(0, Math.min(1, next)));
+      },
+      onPanResponderRelease: (_evt, gesture) => {
+        const projected = dragBaseRef.current + gesture.dx / panelWidth;
+        const shouldOpen = projected > 0.5 || gesture.vx > 0.5;
+        if (shouldOpen) {
+          Animated.timing(menuAnim, {
+            toValue: 1,
+            duration: 200,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }).start();
+        } else {
+          Animated.timing(menuAnim, {
+            toValue: 0,
+            duration: 200,
+            easing: Easing.in(Easing.cubic),
+            useNativeDriver: true,
+          }).start(() => setMenuOpen(false));
+        }
+      },
+      onPanResponderTerminate: (_evt, gesture) => {
+        const projected = dragBaseRef.current + gesture.dx / panelWidth;
+        if (projected > 0.5) {
+          Animated.timing(menuAnim, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+        } else {
+          Animated.timing(menuAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start(() =>
+            setMenuOpen(false),
+          );
+        }
+      },
+    }),
+  ).current;
+
+  // A thin, always-mounted strip along the left edge of the screen (rendered
+  // as a top-level sibling below, not inside the header bar, so it still
+  // works even while the header itself is scrolled out of view) that opens
+  // the drawer on a rightward swipe starting near the edge. It only claims
+  // the gesture on real rightward movement, so it doesn't steal vertical
+  // scroll gestures from whatever list happens to be underneath it.
+  const edgePanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponder: (_evt, gesture) =>
+        gesture.dx > 12 && gesture.dx > Math.abs(gesture.dy),
+      onMoveShouldSetPanResponderCapture: (_evt, gesture) =>
+        gesture.dx > 12 && gesture.dx > Math.abs(gesture.dy),
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderMove: () => {
+        // Idempotent — setMenuOpen(true) when already true is a no-op, and
+        // the open animation only (re)starts via the effect above, which is
+        // keyed on menuOpen actually changing.
+        openMenu();
+      },
+    }),
+  ).current;
+
   const panelTranslateX = menuAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [-panelWidth, 0],
@@ -163,6 +284,12 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
 
   return (
     <>
+      {/* Full-height (not just header-height) so a swipe from the edge opens
+          the drawer even when the header itself is currently scrolled out
+          of view. Rendered as its own top-level sibling rather than inside
+          the header bar's translateY-animated box for that reason. */}
+      <View style={styles.edgeSwipeZone} {...edgePanResponder.panHandlers} />
+
       <Animated.View
         style={[
           styles.header,
@@ -174,11 +301,13 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
         ]}
       >
         <TouchableOpacity
-          onPress={openMenu}
+          onPress={activeTab === "home" ? openMenu : handleGoBack}
           style={styles.avatarBtn}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          {iconUrl ? (
+          {activeTab !== "home" ? (
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          ) : iconUrl ? (
             <Image source={{ uri: iconUrl }} style={styles.avatarImage} />
           ) : (
             <Ionicons name="person-circle-outline" size={32} color="#fff" />
@@ -295,6 +424,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
                 transform: [{ translateX: panelTranslateX }],
               },
             ]}
+            {...panelPanResponder.panHandlers}
           >
             <View style={styles.panelProfile}>
               {iconUrl ? (
@@ -342,6 +472,18 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
 };
 
 const styles = StyleSheet.create({
+  edgeSwipeZone: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    // Wider than it looks like it needs to be: on Android with gesture
+    // navigation enabled, the outermost ~16-20px of the screen edge is
+    // reserved by the system for its own back gesture and never reaches the
+    // app at all, so the zone needs enough margin past that for a swipe to
+    // reliably still start inside it.
+    width: 32,
+  },
   header: {
     position: "absolute",
     top: 0,

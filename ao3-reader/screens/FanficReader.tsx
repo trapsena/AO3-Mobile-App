@@ -5,7 +5,6 @@ import {
   Alert,
   StyleSheet,
   Text,
-  TouchableOpacity,
   Modal,
 } from "react-native";
 import Slider from "@react-native-community/slider";
@@ -13,7 +12,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { WebView, WebViewMessageEvent } from "react-native-webview";
 import ChapterView from "../components/ChapterView";
 import ChapterControls from "../components/ChapterControls";
-import { Ionicons } from "@expo/vector-icons";
 import ReaderHeader, { ReaderHeaderHandle } from "../components/ReaderHeader";
 import SpeechControls from "../components/SpeechControls";
 import { fetchWithSession, getSessionCookie } from "../api/ao3Auth";
@@ -391,6 +389,29 @@ const FanficReader: React.FC<Props> = ({
     return () => clearTimeout(handle);
   }, [hydrated, currentUrl, index, currentTtsIndex, title, chapterTitle, initialUrl]);
 
+  // Force an immediate (non-debounced) save right before leaving, so tapping
+  // back doesn't race the 800ms debounce in the effect above. Defined here
+  // (rather than further down, near goPrev/goNext) so the header-info
+  // publish effect just below can reference it without a temporal-dead-zone
+  // issue — `const` function expressions aren't hoisted the way function
+  // declarations are.
+  const handleClose = () => {
+    const workId = extractWorkId(currentUrl) || extractWorkId(initialUrl || FALLBACK_WORK_URL);
+    if (workId) {
+      saveReadingProgress({
+        workId,
+        workUrl: initialUrl || FALLBACK_WORK_URL,
+        currentUrl,
+        index,
+        title,
+        chapterTitle,
+        paragraphIndex: currentTtsIndex,
+        updatedAt: Date.now(),
+      }).catch((err) => console.warn("[FanficReader] Failed to save progress on close:", err));
+    }
+    onClose?.();
+  };
+
   // Publish this screen's title/TTS state (and a way to reach the settings
   // modal / comments drawer this component still owns via ReaderHeader's
   // ref) so the app's global Ao3Header can render them. Cleared on unmount
@@ -403,8 +424,15 @@ const FanficReader: React.FC<Props> = ({
       onToggleTts: () => setTtsVisible((v) => !v),
       onOpenComments: () => readerHeaderRef.current?.openComments(),
       onOpenSettings: () => readerHeaderRef.current?.openSettings(),
+      onGoBack: handleClose,
     });
-  }, [title, chapterTitle, ttsVisible, onHeaderActionsChange]);
+    // handleClose isn't memoized, so its dependencies (everything it reads —
+    // currentUrl/index/currentTtsIndex/initialUrl/onClose) are listed
+    // explicitly here instead, to keep the published closure from going
+    // stale between title/chapterTitle changes (e.g. after just tapping a
+    // paragraph to move currentTtsIndex, without a new chapter loading).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title, chapterTitle, ttsVisible, currentUrl, index, currentTtsIndex, initialUrl, onClose, onHeaderActionsChange]);
 
   // Separate from the effect above so the "clear on unmount" cleanup doesn't
   // also fire (and briefly flicker the header) on every title/TTS update —
@@ -458,25 +486,6 @@ const FanficReader: React.FC<Props> = ({
     }
   };
 
-  // Force an immediate (non-debounced) save right before leaving, so tapping
-  // back doesn't race the 800ms debounce in the effect above.
-  const handleClose = () => {
-    const workId = extractWorkId(currentUrl) || extractWorkId(initialUrl || FALLBACK_WORK_URL);
-    if (workId) {
-      saveReadingProgress({
-        workId,
-        workUrl: initialUrl || FALLBACK_WORK_URL,
-        currentUrl,
-        index,
-        title,
-        chapterTitle,
-        paragraphIndex: currentTtsIndex,
-        updatedAt: Date.now(),
-      }).catch((err) => console.warn("[FanficReader] Failed to save progress on close:", err));
-    }
-    onClose?.();
-  };
-
   return (
     // No paddingTop here: this box must stay full-screen (a background
     // layer) so ChapterView's WebView underneath can scroll its content
@@ -484,16 +493,6 @@ const FanficReader: React.FC<Props> = ({
     // after it. The header-height reserve is instead baked into the
     // WebView's own HTML padding, via ChapterView's `topInset` prop below.
     <View style={styles.container}>
-      {onClose ? (
-        <TouchableOpacity
-          onPress={handleClose}
-          style={[styles.backBtn, { top: topInset + 12 }]}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons name="arrow-back" size={22} color="#fff" />
-        </TouchableOpacity>
-      ) : null}
-
       {/* Owns the settings modal + comments drawer only — title and the
           buttons that open them now live in the app's global Ao3Header,
           which reaches back into this via readerHeaderRef. */}
@@ -558,20 +557,6 @@ const FanficReader: React.FC<Props> = ({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#000" },
-  backBtn: {
-    position: "absolute",
-    top: 12,
-    left: 12,
-    zIndex: 20,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.55)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-  },
   header: {
     flexDirection: "row",
     alignItems: "center",
