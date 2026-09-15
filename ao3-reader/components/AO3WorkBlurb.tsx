@@ -10,7 +10,7 @@ import {
 } from "react-native";
 
 export type AO3TagGroup = "warnings" | "relationships" | "characters" | "freeforms";
-export type AO3BlurbKind = "work" | "bookmark";
+export type AO3BlurbKind = "work" | "bookmark" | "series";
 type AO3RequiredTagKind = "rating" | "warnings" | "category" | "status";
 
 export interface AO3Link {
@@ -28,6 +28,9 @@ export interface AO3WorkStats {
   language?: string;
   words?: number | string;
   chapters?: string | number;
+  // Only present on a series blurb's stats (how many works it contains) —
+  // left undefined for work/bookmark stats, where it never applies.
+  works?: number | string;
   kudos?: number | string;
   hits?: number | string;
   comments?: number | string;
@@ -116,10 +119,33 @@ export interface AO3BookmarkData {
   ownActions?: AO3BookmarkOwnActions;
 }
 
+// A series blurb, as shown in a profile's "Recent series" list — narrower
+// than a work blurb (no chapters/kudos/hits/comments, no "part of a series"
+// self-reference), but rendered by the same AO3WorkBlurb card for visual
+// consistency with works/bookmarks.
+export interface AO3SeriesBlurbData {
+  id: string | number;
+  title: string;
+  seriesUrl?: string;
+  author?: AO3Link;
+  fandoms?: AO3Link[];
+  rating?: AO3Link;
+  warnings?: AO3Link[];
+  category?: AO3Link[];
+  status?: AO3Link;
+  requiredTagIcons?: AO3RequiredTagIcon[];
+  publishedAt?: string;
+  summary?: string | React.ReactNode;
+  tags?: AO3WorkTagGroups;
+  stats?: AO3WorkStats;
+  extraBadges?: string[];
+}
+
 interface Props {
   kind?: AO3BlurbKind;
   work?: AO3WorkBlurbData;
   bookmark?: AO3BookmarkData;
+  series?: AO3SeriesBlurbData;
   onPressWork?: (item: AO3WorkBlurbData | AO3BookmarkData) => void;
   onPressAuthor?: (author: AO3Link) => void;
   onPressTag?: (tag: AO3Link, group?: AO3TagGroup | "fandoms" | "rating" | "status" | "category" | "warnings" | "bookmarkerTags") => void;
@@ -448,26 +474,33 @@ export const renderCommaLinkList = (
   );
 };
 
-const AO3WorkBlurb: React.FC<Props> = ({ kind = "work", work, bookmark, onPressWork, onPressAuthor, onPressTag, style }) => {
+const AO3WorkBlurb: React.FC<Props> = ({ kind = "work", work, bookmark, series, onPressWork, onPressAuthor, onPressTag, style }) => {
   const isBookmark = kind === "bookmark";
-  const data = (isBookmark ? bookmark : work) ?? null;
+  const isSeries = kind === "series";
+  const data = (isBookmark ? bookmark : isSeries ? series : work) ?? null;
 
   if (!data) return null;
 
-  const stats = (isBookmark ? bookmark?.stats : work?.stats) ?? {};
+  const stats = (isBookmark ? bookmark?.stats : isSeries ? series?.stats : work?.stats) ?? {};
   const summarySource = data.summary;
   const summary = typeof summarySource === "string" ? <Text style={styles.summaryText}>{summarySource}</Text> : summarySource;
-  const requiredTagIcons = !isBookmark ? work?.requiredTagIcons : bookmark?.requiredTagIcons;
-  const rating = !isBookmark ? work?.rating : undefined;
-  const status = !isBookmark ? work?.status : bookmark?.status;
+  const requiredTagIcons = isSeries ? series?.requiredTagIcons : !isBookmark ? work?.requiredTagIcons : bookmark?.requiredTagIcons;
+  const rating = isSeries ? series?.rating : !isBookmark ? work?.rating : undefined;
+  const warningsList = isSeries ? series?.warnings : !isBookmark ? work?.warnings : undefined;
+  const categoryList = isSeries ? series?.category : !isBookmark ? work?.category : undefined;
+  const status = isSeries ? series?.status : !isBookmark ? work?.status : bookmark?.status;
   const bookmarkStatusIcon = bookmark?.bookmarkStatusIcon;
+  const publishedAt = isSeries ? series?.publishedAt : work?.publishedAt;
   const title = data.title;
   // The card's byline is always "by [the fic's author]" — for a bookmark,
   // that's the underlying work's author (bookmark.workAuthor), matching how
   // AO3 itself shows it. "Bookmarked by [person]" is bookmark-specific
   // metadata and belongs in a separate box below the card, not here.
-  const author = !isBookmark ? work?.author : bookmark?.workAuthor;
-  const workUrl = data.workUrl;
+  const author = isSeries ? series?.author : !isBookmark ? work?.author : bookmark?.workAuthor;
+  // A series links to its own /series/ page rather than a /works/ page, so
+  // this is kept separate from a generic "data.workUrl" (which a series
+  // blurb doesn't have) instead of folding it into `data`.
+  const cardUrl = isSeries ? series?.seriesUrl : isBookmark ? bookmark?.workUrl : work?.workUrl;
   const tags = data.tags;
   const fandoms = data.fandoms;
   const extraBadges = data.extraBadges;
@@ -480,7 +513,16 @@ const AO3WorkBlurb: React.FC<Props> = ({ kind = "work", work, bookmark, onPressW
 
   return (
     <Pressable
-      onPress={onPressWork ? () => onPressWork(data) : workUrl ? () => openUrl(workUrl) : undefined}
+      onPress={
+        // onPressWork's signature only covers work/bookmark presses (there's
+        // no "open a series" screen to hand it off to) — a series card's tap
+        // always just opens its AO3 page externally.
+        !isSeries && onPressWork
+          ? () => onPressWork(data as AO3WorkBlurbData | AO3BookmarkData)
+          : cardUrl
+            ? () => openUrl(cardUrl)
+            : undefined
+      }
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed, style]}
     >
       <View style={styles.header}>
@@ -515,7 +557,7 @@ const AO3WorkBlurb: React.FC<Props> = ({ kind = "work", work, bookmark, onPressW
 
         <View style={styles.headerMeta}>
           {isBookmark ? <BookmarkStatusBlock icon={bookmarkStatusIcon} count={bookmark?.count} /> : null}
-          {!isBookmark && work?.publishedAt ? <Text style={styles.date}>{work.publishedAt}</Text> : null}
+          {!isBookmark && publishedAt ? <Text style={styles.date}>{publishedAt}</Text> : null}
         </View>
       </View>
 
@@ -523,8 +565,8 @@ const AO3WorkBlurb: React.FC<Props> = ({ kind = "work", work, bookmark, onPressW
 
       <View style={styles.requiredTags}>
         {!isBookmark && rating ? <TagPill label={rating.label} tone="accent" onPress={rating.href ? () => openUrl(rating.href) : onPressTag ? () => onPressTag(rating, "rating") : undefined} /> : null}
-        {!isBookmark ? renderLinkList(work?.warnings, "warning", (item) => onPressTag?.(item, "warnings")) : null}
-        {!isBookmark ? renderLinkList(work?.category, "muted", (item) => onPressTag?.(item, "category")) : null}
+        {!isBookmark ? renderLinkList(warningsList, "warning", (item) => onPressTag?.(item, "warnings")) : null}
+        {!isBookmark ? renderLinkList(categoryList, "muted", (item) => onPressTag?.(item, "category")) : null}
         {status ? <TagPill label={status.label} tone={isBookmark ? "accent" : "muted"} onPress={status.href ? () => openUrl(status.href) : onPressTag ? () => onPressTag(status, "status") : undefined} /> : null}
       </View>
 
@@ -565,6 +607,7 @@ const AO3WorkBlurb: React.FC<Props> = ({ kind = "work", work, bookmark, onPressW
           ["Language", stats.language],
           ["Words", stats.words],
           ["Chapters", stats.chapters],
+          ["Works", stats.works],
           ["Kudos", stats.kudos],
           ["Hits", stats.hits],
           ["Comments", stats.comments],

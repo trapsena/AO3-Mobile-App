@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Image,
   Linking,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -14,7 +15,13 @@ import {
 import { WebView, WebViewMessageEvent } from "react-native-webview";
 import { fetchWithSession } from "../api/ao3Auth";
 import { extractUsernameFromUsersUrl, extractCsrfToken, deleteAo3Bookmark } from "../api/ao3Bookmarks";
-import AO3WorkBlurb, { AO3BookmarkData, AO3BlurbKind, AO3WorkBlurbData, AO3Link } from "../components/AO3WorkBlurb";
+import AO3WorkBlurb, {
+  AO3BookmarkData,
+  AO3BlurbKind,
+  AO3WorkBlurbData,
+  AO3SeriesBlurbData,
+  AO3Link,
+} from "../components/AO3WorkBlurb";
 import BookmarkOwnerCard from "../components/BookmarkOwnerCard";
 import type { ProfileHeaderInfo } from "../components/Ao3Header";
 
@@ -40,12 +47,39 @@ export interface AO3ListingItem {
   kind: AO3BlurbKind;
   work?: AO3WorkBlurbData;
   bookmark?: AO3BookmarkData;
+  series?: AO3SeriesBlurbData;
 }
 
 export interface AO3ListingGroup {
   key: string;
   title: string;
   items: AO3ListingItem[];
+}
+
+// A profile's "Fandoms" box — shown once, above the Works/Series/Bookmarks
+// lists, rather than as its own scrollable section (it isn't a list of
+// blurb cards).
+export interface AO3FandomEntry {
+  label: string;
+  href?: string;
+  count?: number;
+}
+
+// Whatever Rails actually rendered for the Subscribe toggle form, captured
+// as-is (action URL, method override, hidden fields) so it can be replayed
+// exactly rather than the app having to guess create-vs-destroy semantics.
+interface AO3SubscribeForm {
+  actionUrl?: string;
+  method: string;
+  fields: Record<string, string>;
+  commitLabel?: string;
+  isSubscribed: boolean;
+}
+
+interface AO3ProfileActions {
+  subscribe?: AO3SubscribeForm;
+  blockHref?: string;
+  muteHref?: string;
 }
 
 interface Props {
@@ -259,28 +293,6 @@ const LISTING_INJECTED_JS = `
     };
   }
 
-  function findGroupTitle(el) {
-    var current = el;
-    while (current) {
-      var sibling = current.previousElementSibling;
-      while (sibling) {
-        var heading = sibling.matches && sibling.matches("h1,h2,h3,h4,h5,h6") ? sibling : sibling.querySelector && sibling.querySelector("h1,h2,h3,h4,h5,h6");
-        if (heading) {
-          var headingText = text(heading);
-          if (headingText) return headingText;
-        }
-        sibling = sibling.previousElementSibling;
-      }
-      current = current.parentElement;
-    }
-    return document.title || "AO3 Listing";
-  }
-
-  function blurbKind(root) {
-    if (root.classList.contains("bookmark")) return "bookmark";
-    return "work";
-  }
-
   function parseWork(root) {
     var titleLink = firstMatch(root, ["h4.heading a", ".header h4 a", "a[href*='/works/']"]);
     var authorLink = root.querySelector("a[rel='author']");
@@ -456,134 +468,189 @@ const LISTING_INJECTED_JS = `
     };
   }
 
-  function parseGroup(root) {
-    var title = findGroupTitle(root);
-    var items = [];
-    var blurbs = Array.from(root.querySelectorAll("li.work.blurb, li.bookmark.blurb"));
-    if (root.matches && (root.matches("li.work.blurb") || root.matches("li.bookmark.blurb"))) {
-      blurbs = [root].concat(blurbs);
-    }
-
-    var seen = new Set();
-    blurbs.forEach(function(node) {
-      if (!node || !node.classList) return;
-      var id = node.id || text(node.querySelector("h4.heading a")) || text(node);
-      if (!id || seen.has(id)) return;
-      seen.add(id);
-      if (node.classList.contains("bookmark")) {
-        items.push(parseBookmark(node));
-      } else {
-        items.push(parseWork(node));
-      }
-    });
-
+  // A series blurb is a lot narrower than a work blurb (no chapters/kudos/
+  // hits/comments, no "part of a series" self-reference) but shares the
+  // same title/author/fandoms/required-tags/tags-commas/datetime markup, so
+  // this reuses the same collect* helpers as parseWork above.
+  function parseSeriesItem(root) {
+    var titleLink = firstMatch(root, ["h4.heading a[href*='/series/']", "h4.heading a"]);
+    var authorLink = root.querySelector("a[rel='author']");
+    var fandomLinks = collectTags(root, ["h5.fandoms a.tag", ".fandoms a.tag"]);
+    var commaTags = collectCommaTags(root);
+    var required = collectRequired(root);
+    var stats = collectStats(root);
     return {
-      key: title + "::" + (root.id || "root"),
-      title: title,
-      items: items,
+      id: root.id || "",
+      kind: "series",
+      series: {
+        id: root.id || "",
+        title: titleLink ? text(titleLink) : text(root),
+        seriesUrl: titleLink ? abs(titleLink.getAttribute("href")) || undefined : undefined,
+        author: authorLink ? { label: text(authorLink), href: abs(authorLink.getAttribute("href")) || undefined } : undefined,
+        fandoms: fandomLinks.length ? fandomLinks : undefined,
+        tags: {
+          warnings: commaTags.warnings.length ? commaTags.warnings.map(function(tag) { return tag.label; }) : undefined,
+          relationships: commaTags.relationships.length ? commaTags.relationships.map(function(tag) { return tag.label; }) : undefined,
+          characters: commaTags.characters.length ? commaTags.characters.map(function(tag) { return tag.label; }) : undefined,
+          freeforms: commaTags.freeforms.length ? commaTags.freeforms.map(function(tag) { return tag.label; }) : undefined,
+        },
+        rating: required.rating,
+        warnings: required.warnings,
+        category: required.category,
+        status: required.status,
+        requiredTagIcons: required.icons,
+        publishedAt: text(root.querySelector(".datetime")) || undefined,
+        summary: collectSummary(root) || undefined,
+        stats: {
+          words: stats.words,
+          works: stats.works,
+          bookmarks: stats.bookmarks,
+        },
+      }
     };
   }
 
-  function collectGroups() {
-    var candidates = Array.from(document.querySelectorAll("ol.group, ul.group, .group, section, main"));
-    var blurbs = Array.from(document.querySelectorAll("li.work.blurb, li.bookmark.blurb"));
-
-    if (blurbs.length === 0) {
-      var fallback = Array.from(document.querySelectorAll("li"));
-      blurbs = fallback.filter(function(node) {
-        return node.classList && (node.classList.contains("work") || node.classList.contains("bookmark")) && node.classList.contains("blurb");
+  // The profile page's "Fandoms" box (#user-fandoms) lists every fandom this
+  // user has works in, each as "<a>Fandom Name</a> (N)" — the count sits as
+  // plain text right after the link, not inside its own element.
+  function collectFandoms() {
+    var container = document.querySelector("#user-fandoms");
+    if (!container) return [];
+    var items = Array.from(container.querySelectorAll("ol.index.group > li"));
+    var out = [];
+    items.forEach(function(li) {
+      var a = li.querySelector("a");
+      if (!a) return;
+      var full = text(li);
+      var m = full.match(/\\((\\d[\\d,]*)\\)\\s*$/);
+      out.push({
+        label: text(a),
+        href: abs(a.getAttribute("href")) || undefined,
+        count: m ? parseInt(m[1].replace(/,/g, ""), 10) : undefined,
       });
-    }
-
-    if (blurbs.length === 0) return [];
-
-    if (candidates.length === 0) {
-      return [{
-        key: "default",
-        title: document.title || "AO3 Listing",
-        items: blurbs.map(function(node) {
-          return node.classList.contains("bookmark") ? parseBookmark(node) : parseWork(node);
-        })
-      }];
-    }
-
-    var groups = [];
-    var used = new Set();
-
-    candidates.forEach(function(container) {
-      var localBlurbs = Array.from(container.querySelectorAll("li.work.blurb, li.bookmark.blurb"));
-      if (localBlurbs.length === 0) return;
-
-      var parsed = parseGroup(container);
-      if (!parsed.items.length) return;
-
-      parsed.items.forEach(function(item) {
-        used.add(item.id);
-      });
-      groups.push(parsed);
     });
-
-    var remaining = blurbs.filter(function(node) {
-      return !used.has(node.id || "");
-    });
-
-    if (remaining.length) {
-      groups.push({
-        key: "ungrouped",
-        title: "Ungrouped",
-        items: remaining.map(function(node) {
-          return node.classList.contains("bookmark") ? parseBookmark(node) : parseWork(node);
-        })
-      });
-    }
-
-    var deduped = [];
-    var groupSeen = new Set();
-    groups.forEach(function(group) {
-      if (groupSeen.has(group.key)) return;
-      groupSeen.add(group.key);
-      deduped.push(group);
-    });
-
-    // For now, only surface the "Recent Bookmarks" group — the page also
-    // renders a full "Bookmarks" listing which duplicates most of the same
-    // items and was what looked like the list "reloading" after itself.
-    var recentOnly = deduped.filter(function(group) {
-      return /recent\\s+bookmarks?/i.test(group.title || "");
-    });
-
-    if (recentOnly.length) return recentOnly;
-
-    // Fallback: title text didn't match (page markup may differ). Rather
-    // than silently show nothing, fall back to everything and log why.
-    console.warn("[AO3ListingScreen] No group titled like 'Recent Bookmarks' found; showing all groups. Titles seen:", deduped.map(function(g) { return g.title; }));
-    return deduped;
+    return out;
   }
 
-  // AO3's own profile/dashboard pages typically show a "Bookmarks (N)" style
-  // nav link near the top (alongside similar Works/Series/Collections
-  // counts) — this is the actual total, which the "Recent Bookmarks"
-  // section below only ever shows a handful of.
-  function findBookmarksCount() {
-    var links = Array.from(document.querySelectorAll('a[href*="/bookmarks"]'));
+  // Each of #user-works / #user-series / #user-bookmarks lists only that
+  // section's own blurbs, so no group-boundary guessing is needed the way
+  // the old generic scanner had to — just scope the query to the container.
+  function collectSectionItems(containerSelector, parseFn) {
+    var container = document.querySelector(containerSelector);
+    if (!container) return [];
+    var blurbs = Array.from(container.querySelectorAll("li.work.blurb, li.series.blurb, li.bookmark.blurb"));
+    var seen = new Set();
+    var items = [];
+    blurbs.forEach(function(node) {
+      var id = node.id || "";
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      items.push(parseFn(node));
+    });
+    return items;
+  }
+
+  // A profile page always lays these three out in this order (Works, then
+  // Series, then Bookmarks) — this just mirrors that instead of trying to
+  // infer group order/titles from generic page structure.
+  function collectProfileGroups() {
+    var groups = [];
+
+    var works = collectSectionItems("#user-works", parseWork);
+    if (works.length) groups.push({ key: "works", title: "Recent works", items: works });
+
+    var series = collectSectionItems("#user-series", parseSeriesItem);
+    if (series.length) groups.push({ key: "series", title: "Recent series", items: series });
+
+    var bookmarks = collectSectionItems("#user-bookmarks", parseBookmark);
+    if (bookmarks.length) groups.push({ key: "bookmarks", title: "Recent bookmarks", items: bookmarks });
+
+    return groups;
+  }
+
+  // Each section ends with its own "<a>Works (15)</a>"-style link to the
+  // full (paginated) listing — this is the section's actual total, which
+  // the "Recent ..." list above it only ever shows a handful of.
+  function findSectionTotal(containerSelector) {
+    var container = document.querySelector(containerSelector);
+    if (!container) return null;
+    var links = Array.from(container.querySelectorAll("ul.actions a"));
     for (var i = 0; i < links.length; i++) {
       var t = text(links[i]);
-      var m = t.match(/\\((\\d[\\d,]*)\\)/) || t.match(/^(\\d[\\d,]*)$/);
+      var m = t.match(/\\((\\d[\\d,]*)\\)\\s*$/);
       if (m) return parseInt(m[1].replace(/,/g, ""), 10);
     }
     return null;
   }
 
+  // The profile's own picture, shown at the top of the page next to the
+  // username heading. Deliberately scoped to the profile's own header block
+  // (never an unscoped "p.icon img" search of the whole document) — AO3's
+  // site-wide nav also renders the logged-in session user's own icon in a
+  // "p.icon img" earlier in the page, and an unscoped query would match that
+  // one instead whenever it comes first in document order, showing YOUR
+  // picture on every profile instead of the one actually being viewed.
+  function collectAvatarUrl() {
+    var scope = document.querySelector(".primary.header.module") || document.querySelector(".user.pseud.home");
+    if (!scope) return null;
+    var img = scope.querySelector("p.icon img.icon") || scope.querySelector("p.icon img");
+    return img ? abs(img.getAttribute("src")) : null;
+  }
+
+  // Subscribe/Mute/Block only render in this nav for someone ELSE's profile
+  // (AO3 has nothing here on your own). Subscribe is a toggle form; rather
+  // than guessing its REST semantics, this just captures whatever Rails
+  // actually rendered (action URL, method override, hidden fields) so the
+  // app can replay it exactly — the same "read the real form" approach used
+  // for the bookmark/history delete forms elsewhere in this app.
+  function collectProfileActions() {
+    var nav = document.querySelector(".primary.header.module ul.navigation.actions");
+    if (!nav) return null;
+
+    var subscribe = null;
+    var form = nav.querySelector("form.ajax-create-destroy");
+    if (form) {
+      var methodInput = form.querySelector("input[name='_method']");
+      var submitBtn = form.querySelector("input[type='submit']");
+      var fields = {};
+      Array.from(form.querySelectorAll("input[name]")).forEach(function(input) {
+        if (input.type === "submit") return;
+        fields[input.name] = input.value;
+      });
+      subscribe = {
+        actionUrl: abs(form.getAttribute("action")),
+        method: methodInput ? methodInput.value.toUpperCase() : (form.getAttribute("method") || "post").toUpperCase(),
+        fields: fields,
+        commitLabel: submitBtn ? submitBtn.value : undefined,
+        isSubscribed: !!(submitBtn && /unsubscribe/i.test(submitBtn.value || "")),
+      };
+    }
+
+    var links = Array.from(nav.querySelectorAll("li > a"));
+    function findLink(re) {
+      var a = links.find(function(a) { return re.test(text(a)); });
+      return a ? abs(a.getAttribute("href")) : undefined;
+    }
+
+    var blockHref = findLink(/block/i);
+    var muteHref = findLink(/mute/i);
+    if (!subscribe && !blockHref && !muteHref) return null;
+
+    return { subscribe: subscribe, blockHref: blockHref, muteHref: muteHref };
+  }
+
   setTimeout(function() {
     try {
-      var groups = collectGroups();
       var csrfMeta = document.querySelector('meta[name="csrf-token"]');
       window.ReactNativeWebView.postMessage(JSON.stringify({
         type: "listingData",
         pageTitle: document.title || "",
-        groups: groups,
+        avatarUrl: collectAvatarUrl(),
+        profileActions: collectProfileActions(),
+        fandoms: collectFandoms(),
+        groups: collectProfileGroups(),
         csrfToken: csrfMeta ? csrfMeta.getAttribute("content") : null,
-        bookmarksCount: findBookmarksCount(),
+        bookmarksCount: findSectionTotal("#user-bookmarks"),
       }));
     } catch (err) {
       window.ReactNativeWebView.postMessage(JSON.stringify({
@@ -615,6 +682,11 @@ const AO3ListingScreen: React.FC<Props> = ({
   const [loading, setLoading] = useState(true);
   const [pageTitle, setPageTitle] = useState(title || "");
   const [groups, setGroups] = useState<AO3ListingGroup[]>([]);
+  const [fandoms, setFandoms] = useState<AO3FandomEntry[]>([]);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [profileActions, setProfileActions] = useState<AO3ProfileActions | null>(null);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [subscribing, setSubscribing] = useState(false);
   const [sourceHtml, setSourceHtml] = useState<string | null>(null);
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
@@ -689,6 +761,11 @@ const AO3ListingScreen: React.FC<Props> = ({
         const nextGroups = Array.isArray(payload.groups) ? payload.groups : [];
         setGroups(nextGroups);
         onGroupsLoaded?.(nextGroups);
+        setFandoms(Array.isArray(payload.fandoms) ? payload.fandoms : []);
+        setAvatarUrl(typeof payload.avatarUrl === "string" ? payload.avatarUrl : null);
+        const nextActions: AO3ProfileActions | null = payload.profileActions || null;
+        setProfileActions(nextActions);
+        setIsSubscribed(!!nextActions?.subscribe?.isSubscribed);
         if (payload.csrfToken) setCsrfToken(payload.csrfToken);
         if (typeof payload.bookmarksCount === "number") setBookmarksCount(payload.bookmarksCount);
       } else if (payload.type === "listingError") {
@@ -790,15 +867,88 @@ const AO3ListingScreen: React.FC<Props> = ({
     [csrfToken, url],
   );
 
+  // Replays whatever Rails actually rendered for the Subscribe/Unsubscribe
+  // form (see collectProfileActions above) rather than re-deriving the
+  // create/destroy semantics ourselves — the same "resubmit the real form"
+  // approach the bookmark/history delete actions already use.
+  const handleToggleSubscribe = useCallback(async () => {
+    const subscribe = profileActions?.subscribe;
+    if (!subscribe?.actionUrl) return;
+
+    setSubscribing(true);
+    try {
+      const body = new URLSearchParams();
+      Object.entries(subscribe.fields).forEach(([key, value]) => body.append(key, value));
+      if (subscribe.commitLabel) body.append("commit", subscribe.commitLabel);
+
+      const res = await fetchWithSession(subscribe.actionUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          Referer: url,
+        },
+        body: body.toString(),
+      });
+
+      if (res.ok) {
+        setIsSubscribed((prev) => !prev);
+      } else {
+        Alert.alert(
+          "Couldn't update subscription",
+          `AO3 didn't confirm the change (status ${res.status}).`,
+        );
+      }
+    } catch (err) {
+      console.warn("[AO3ListingScreen] Subscribe toggle failed:", err);
+      Alert.alert("Couldn't update subscription", "Something went wrong. Please try again.");
+    } finally {
+      setSubscribing(false);
+    }
+  }, [profileActions, url]);
+
+  const handleMute = useCallback(() => {
+    if (!profileActions?.muteHref) return;
+    Linking.openURL(profileActions.muteHref).catch((err) => {
+      console.warn("[AO3ListingScreen] Could not open mute URL:", err);
+    });
+  }, [profileActions]);
+
+  const handleBlock = useCallback(() => {
+    if (!profileActions?.blockHref) return;
+    Linking.openURL(profileActions.blockHref).catch((err) => {
+      console.warn("[AO3ListingScreen] Could not open block URL:", err);
+    });
+  }, [profileActions]);
+
   // Only meaningful when this screen is used as the standalone "profile" tab
   // (App.tsx passes onHeaderActionsChange there, but not for the Home tab's
   // embedded usage) — harmless no-op otherwise since both calls are optional.
+  // `actions` is only included when viewing someone else's profile — AO3 has
+  // no Subscribe/Mute/Block on your own.
   useEffect(() => {
     onHeaderActionsChange?.({
       title: pageTitle || title || (profileUsername ? `${profileUsername}'s Profile` : "Profile"),
       onGoBack: () => onClose?.(),
+      actions:
+        !isOwnUser && profileActions
+          ? { isSubscribed, subscribing, onToggleSubscribe: handleToggleSubscribe, onMute: handleMute, onBlock: handleBlock }
+          : undefined,
     });
-  }, [pageTitle, title, profileUsername, onClose, onHeaderActionsChange]);
+  }, [
+    pageTitle,
+    title,
+    profileUsername,
+    onClose,
+    onHeaderActionsChange,
+    isOwnUser,
+    profileActions,
+    isSubscribed,
+    subscribing,
+    handleToggleSubscribe,
+    handleMute,
+    handleBlock,
+  ]);
 
   // Separate from the effect above so the "clear on unmount" cleanup doesn't
   // also fire (and briefly flicker the header) on every title update — this
@@ -846,12 +996,57 @@ const AO3ListingScreen: React.FC<Props> = ({
           onScroll={onScroll}
           scrollEventThrottle={16}
           stickySectionHeadersEnabled={false}
+          ListHeaderComponent={
+            avatarUrl || profileUsername || fandoms.length ? (
+              <View>
+                {avatarUrl || profileUsername ? (
+                  <View style={styles.profileHeaderRow}>
+                    {avatarUrl ? (
+                      <Image source={{ uri: avatarUrl }} style={styles.profileAvatar} />
+                    ) : (
+                      <View style={[styles.profileAvatar, styles.profileAvatarPlaceholder]} />
+                    )}
+                    <Text style={styles.profileUsername} numberOfLines={1}>
+                      {profileUsername || pageTitle || "Profile"}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {fandoms.length ? (
+                  <View style={styles.fandomsBox}>
+                    <Text style={styles.fandomsTitle}>Fandoms</Text>
+                    <View style={styles.fandomsList}>
+                      {fandoms.map((fandom, index) => (
+                        <TouchableOpacity
+                          key={`${fandom.label}-${index}`}
+                          style={styles.fandomPill}
+                          onPress={fandom.href ? () => Linking.openURL(fandom.href!) : undefined}
+                          disabled={!fandom.href}
+                        >
+                          {/* Split into two Texts so a long fandom name only
+                              ever truncates itself — the count stays in its
+                              own non-shrinking Text and is never the part
+                              that gets clipped by numberOfLines. */}
+                          <Text style={styles.fandomPillText} numberOfLines={1}>
+                            {fandom.label}
+                          </Text>
+                          {typeof fandom.count === "number" ? (
+                            <Text style={styles.fandomPillCount}>{` (${fandom.count})`}</Text>
+                          ) : null}
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                ) : null}
+              </View>
+            ) : null
+          }
           renderSectionHeader={({ section }) => (
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.groupTitle} numberOfLines={1}>
                 {section.title}
               </Text>
-              {profileUsername && onPressBookmarker ? (
+              {section.key === "bookmarks" && profileUsername && onPressBookmarker ? (
                 <TouchableOpacity
                   style={styles.bookmarksCountBtn}
                   onPress={() => onPressBookmarker(profileUsername)}
@@ -869,7 +1064,11 @@ const AO3ListingScreen: React.FC<Props> = ({
                 kind={entry.kind}
                 work={entry.work}
                 bookmark={entry.bookmark}
-                onPressWork={onItemPress ? handlePressWork : undefined}
+                series={entry.series}
+                // A series card has no "open reader" destination of its own —
+                // tapping it just opens the series' AO3 page externally
+                // (AO3WorkBlurb's own default fallback for an unhandled press).
+                onPressWork={entry.kind !== "series" && onItemPress ? handlePressWork : undefined}
                 onPressAuthor={onPressAuthor}
               />
 
@@ -936,6 +1135,69 @@ const styles = StyleSheet.create({
     color: "#9a9a9a",
     fontSize: 12,
     marginTop: 4,
+  },
+  profileHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 16,
+  },
+  profileAvatar: {
+    width: 56,
+    height: 56,
+    borderWidth: 1,
+    borderColor: "#333",
+  },
+  profileAvatarPlaceholder: {
+    backgroundColor: "#1c1c1c",
+  },
+  profileUsername: {
+    flex: 1,
+    color: "#fff",
+    fontSize: 20,
+    fontWeight: "700",
+  },
+  fandomsBox: {
+    backgroundColor: "#111",
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+    borderRadius: 16,
+    padding: 16,
+    gap: 12,
+    marginBottom: 16,
+  },
+  fandomsTitle: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  fandomsList: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  fandomPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1c1c1c",
+    borderColor: "#343434",
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    maxWidth: "100%",
+  },
+  fandomPillText: {
+    flexShrink: 1,
+    color: "#d8d8d8",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  fandomPillCount: {
+    flexShrink: 0,
+    color: "#d8d8d8",
+    fontSize: 12,
+    fontWeight: "600",
   },
   sectionHeaderRow: {
     flexDirection: "row",

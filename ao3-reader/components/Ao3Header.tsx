@@ -63,6 +63,16 @@ export interface BookmarksHeaderInfo {
 export interface ProfileHeaderInfo {
   title: string;
   onGoBack: () => void;
+  // Only set when viewing someone else's profile (never your own, which has
+  // no Subscribe/Mute/Block on AO3 either) — lets the header show a dropdown
+  // with these actions instead of AO3ListingScreen needing its own menu UI.
+  actions?: {
+    isSubscribed: boolean;
+    subscribing: boolean;
+    onToggleSubscribe: () => void;
+    onMute: () => void;
+    onBlock: () => void;
+  };
 }
 
 interface Ao3HeaderProps {
@@ -108,6 +118,10 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
   const [iconUrl, setIconUrl] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuAnim = useRef(new Animated.Value(0)).current;
+  // The Subscribe/Mute/Block dropdown shown on someone else's profile — a
+  // separate, much simpler Modal than the drawer above (no drag/animation
+  // needed, just show/hide on tap).
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -416,7 +430,17 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
             <Text style={styles.headerTitle} numberOfLines={1}>
               {profileHeaderInfo.title || "Profile"}
             </Text>
-            <View style={styles.avatarBtn} />
+            {profileHeaderInfo.actions ? (
+              <TouchableOpacity
+                onPress={() => setProfileMenuOpen(true)}
+                style={styles.avatarBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="ellipsis-vertical" size={20} color="#fff" />
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.avatarBtn} />
+            )}
           </>
         ) : (
           <>
@@ -484,6 +508,56 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
               <Text style={[styles.panelItemLabel, { color: "#f66" }]}>Logout</Text>
             </TouchableOpacity>
           </Animated.View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={profileMenuOpen && activeTab === "profile" && !!profileHeaderInfo?.actions}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setProfileMenuOpen(false)}
+      >
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => setProfileMenuOpen(false)} />
+        <View style={[styles.profileMenu, { top: headerHeight + 4 }]}>
+          <TouchableOpacity
+            style={styles.profileMenuItem}
+            disabled={profileHeaderInfo?.actions?.subscribing}
+            onPress={() => {
+              profileHeaderInfo?.actions?.onToggleSubscribe();
+              setProfileMenuOpen(false);
+            }}
+          >
+            <Ionicons
+              name={profileHeaderInfo?.actions?.isSubscribed ? "heart" : "heart-outline"}
+              size={16}
+              color="#ddd"
+            />
+            <Text style={styles.profileMenuItemLabel}>
+              {profileHeaderInfo?.actions?.isSubscribed ? "Unsubscribe" : "Subscribe"}
+            </Text>
+          </TouchableOpacity>
+          <View style={styles.profileMenuDivider} />
+          <TouchableOpacity
+            style={styles.profileMenuItem}
+            onPress={() => {
+              profileHeaderInfo?.actions?.onMute();
+              setProfileMenuOpen(false);
+            }}
+          >
+            <Ionicons name="volume-mute-outline" size={16} color="#ddd" />
+            <Text style={styles.profileMenuItemLabel}>Mute</Text>
+          </TouchableOpacity>
+          <View style={styles.profileMenuDivider} />
+          <TouchableOpacity
+            style={styles.profileMenuItem}
+            onPress={() => {
+              profileHeaderInfo?.actions?.onBlock();
+              setProfileMenuOpen(false);
+            }}
+          >
+            <Ionicons name="ban-outline" size={16} color="#f66" />
+            <Text style={[styles.profileMenuItemLabel, { color: "#f66" }]}>Block</Text>
+          </TouchableOpacity>
         </View>
       </Modal>
     </>
@@ -654,6 +728,33 @@ const styles = StyleSheet.create({
   },
   panelSpacer: {
     flex: 1,
+  },
+  profileMenu: {
+    position: "absolute",
+    right: 12,
+    minWidth: 160,
+    backgroundColor: "#1c1c1c",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#2e2e2e",
+    paddingVertical: 4,
+    overflow: "hidden",
+  },
+  profileMenuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  profileMenuItemLabel: {
+    color: "#ddd",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  profileMenuDivider: {
+    height: 1,
+    backgroundColor: "#2e2e2e",
   },
 });
 
