@@ -12,11 +12,11 @@ import {
   View,
 } from "react-native";
 import { WebView, WebViewMessageEvent } from "react-native-webview";
-import { Ionicons } from "@expo/vector-icons";
 import { fetchWithSession } from "../api/ao3Auth";
 import { extractUsernameFromUsersUrl, extractCsrfToken, deleteAo3Bookmark } from "../api/ao3Bookmarks";
-import AO3WorkBlurb, { AO3BookmarkData, AO3BlurbKind, AO3WorkBlurbData } from "../components/AO3WorkBlurb";
+import AO3WorkBlurb, { AO3BookmarkData, AO3BlurbKind, AO3WorkBlurbData, AO3Link } from "../components/AO3WorkBlurb";
 import BookmarkOwnerCard from "../components/BookmarkOwnerCard";
+import type { ProfileHeaderInfo } from "../components/Ao3Header";
 
 const HiddenWebView = React.forwardRef<any, any>((props, ref) => (
   <View
@@ -67,6 +67,19 @@ interface Props {
   // bookmark — those only make sense (and only actually exist server-side)
   // when this matches the bookmark's own profile.
   currentUsername?: string | null;
+  // Called when a work/bookmark card's author byline is tapped, so the
+  // caller can open that author's profile in-app (this same screen, reused
+  // for a different `url`) instead of the external browser.
+  onPressAuthor?: (author: AO3Link) => void;
+  // Called when the header's back button is tapped. Only meaningful when
+  // this screen is used as the standalone "profile" tab (not embedded in
+  // Home, which has no back button and never passes this).
+  onClose?: () => void;
+  // Published whenever this screen's title changes (and cleared with `null`
+  // on unmount) so the app's global Ao3Header can render its own back
+  // button + title instead of this component drawing its own. Only meant to
+  // be passed when this screen is used as the standalone "profile" tab.
+  onHeaderActionsChange?: (info: ProfileHeaderInfo | null) => void;
 }
 
 const LISTING_INJECTED_JS = `
@@ -547,6 +560,20 @@ const LISTING_INJECTED_JS = `
     return deduped;
   }
 
+  // AO3's own profile/dashboard pages typically show a "Bookmarks (N)" style
+  // nav link near the top (alongside similar Works/Series/Collections
+  // counts) — this is the actual total, which the "Recent Bookmarks"
+  // section below only ever shows a handful of.
+  function findBookmarksCount() {
+    var links = Array.from(document.querySelectorAll('a[href*="/bookmarks"]'));
+    for (var i = 0; i < links.length; i++) {
+      var t = text(links[i]);
+      var m = t.match(/\\((\\d[\\d,]*)\\)/) || t.match(/^(\\d[\\d,]*)$/);
+      if (m) return parseInt(m[1].replace(/,/g, ""), 10);
+    }
+    return null;
+  }
+
   setTimeout(function() {
     try {
       var groups = collectGroups();
@@ -556,6 +583,7 @@ const LISTING_INJECTED_JS = `
         pageTitle: document.title || "",
         groups: groups,
         csrfToken: csrfMeta ? csrfMeta.getAttribute("content") : null,
+        bookmarksCount: findBookmarksCount(),
       }));
     } catch (err) {
       window.ReactNativeWebView.postMessage(JSON.stringify({
@@ -578,6 +606,9 @@ const AO3ListingScreen: React.FC<Props> = ({
   contentContainerTopPadding = 0,
   onPressBookmarker,
   currentUsername,
+  onPressAuthor,
+  onClose,
+  onHeaderActionsChange,
 }) => {
   const webRef = useRef<any>(null);
   const lastPayloadRef = useRef<string | null>(null);
@@ -587,6 +618,7 @@ const AO3ListingScreen: React.FC<Props> = ({
   const [sourceHtml, setSourceHtml] = useState<string | null>(null);
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
+  const [bookmarksCount, setBookmarksCount] = useState<number | null>(null);
 
   // Derived from `url` rather than a dedicated prop, so this keeps working
   // once this screen is reused to render other users' profiles (not just
@@ -658,6 +690,7 @@ const AO3ListingScreen: React.FC<Props> = ({
         setGroups(nextGroups);
         onGroupsLoaded?.(nextGroups);
         if (payload.csrfToken) setCsrfToken(payload.csrfToken);
+        if (typeof payload.bookmarksCount === "number") setBookmarksCount(payload.bookmarksCount);
       } else if (payload.type === "listingError") {
         console.warn("[AO3ListingScreen] Listing extraction failed:", payload.error);
       }
@@ -757,6 +790,25 @@ const AO3ListingScreen: React.FC<Props> = ({
     [csrfToken, url],
   );
 
+  // Only meaningful when this screen is used as the standalone "profile" tab
+  // (App.tsx passes onHeaderActionsChange there, but not for the Home tab's
+  // embedded usage) — harmless no-op otherwise since both calls are optional.
+  useEffect(() => {
+    onHeaderActionsChange?.({
+      title: pageTitle || title || (profileUsername ? `${profileUsername}'s Profile` : "Profile"),
+      onGoBack: () => onClose?.(),
+    });
+  }, [pageTitle, title, profileUsername, onClose, onHeaderActionsChange]);
+
+  // Separate from the effect above so the "clear on unmount" cleanup doesn't
+  // also fire (and briefly flicker the header) on every title update — this
+  // one's dependency array never changes, so its cleanup only runs once,
+  // when the screen actually unmounts.
+  useEffect(() => {
+    return () => onHeaderActionsChange?.(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     // No paddingTop here: this box must stay full-screen (a background
     // layer) so the SectionList underneath can scroll its content behind
@@ -794,21 +846,22 @@ const AO3ListingScreen: React.FC<Props> = ({
           onScroll={onScroll}
           scrollEventThrottle={16}
           stickySectionHeadersEnabled={false}
-          ListHeaderComponent={
-            profileUsername && onPressBookmarker ? (
-              <TouchableOpacity
-                style={styles.viewBookmarksBtn}
-                onPress={() => onPressBookmarker(profileUsername)}
-              >
-                <Ionicons name="bookmark-outline" size={16} color="#000" />
-                <Text style={styles.viewBookmarksBtnText} numberOfLines={1}>
-                  View {profileUsername}'s Bookmarks
-                </Text>
-              </TouchableOpacity>
-            ) : null
-          }
           renderSectionHeader={({ section }) => (
-            <Text style={styles.groupTitle}>{section.title}</Text>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.groupTitle} numberOfLines={1}>
+                {section.title}
+              </Text>
+              {profileUsername && onPressBookmarker ? (
+                <TouchableOpacity
+                  style={styles.bookmarksCountBtn}
+                  onPress={() => onPressBookmarker(profileUsername)}
+                >
+                  <Text style={styles.bookmarksCountBtnText} numberOfLines={1}>
+                    Bookmarks ({bookmarksCount ?? 0})
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
           )}
           renderItem={({ item: entry }) => (
             <View style={styles.blurbWrap}>
@@ -817,6 +870,7 @@ const AO3ListingScreen: React.FC<Props> = ({
                 work={entry.work}
                 bookmark={entry.bookmark}
                 onPressWork={onItemPress ? handlePressWork : undefined}
+                onPressAuthor={onPressAuthor}
               />
 
               {entry.kind === "bookmark" && entry.bookmark ? (
@@ -883,21 +937,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
   },
-  viewBookmarksBtn: {
+  sectionHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "space-between",
     gap: 8,
-    alignSelf: "flex-start",
-    backgroundColor: "#7ec14b",
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginBottom: 16,
+    marginBottom: 4,
   },
-  viewBookmarksBtnText: {
-    color: "#000",
-    fontSize: 13,
+  bookmarksCountBtn: {
+    alignSelf: "flex-start",
+    backgroundColor: "#242424",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: "#333",
+  },
+  bookmarksCountBtnText: {
+    color: "#ddd",
+    fontSize: 12,
     fontWeight: "700",
   },
   loading: {
@@ -915,10 +973,10 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   groupTitle: {
+    flexShrink: 1,
     color: "#7ec14b",
     fontSize: 16,
     fontWeight: "700",
-    marginBottom: 4,
   },
   blurbWrap: {
     width: "100%",

@@ -16,7 +16,7 @@ import {
 import { WebView, WebViewMessageEvent } from "react-native-webview";
 import { Ionicons } from "@expo/vector-icons";
 import { fetchWithSession } from "../api/ao3Auth";
-import AO3WorkBlurb, { AO3WorkBlurbData } from "../components/AO3WorkBlurb";
+import AO3WorkBlurb, { AO3WorkBlurbData, AO3Link } from "../components/AO3WorkBlurb";
 import type { HistoryHeaderInfo } from "../components/Ao3Header";
 
 /* ------------------------------------------------------------------ */
@@ -67,6 +67,9 @@ interface Props {
   // becomes a back button on any non-Home screen, this one included).
   onClose?: () => void;
   onWorkPress?: (work: AO3WorkBlurbData) => void;
+  // Called when a work card's author byline is tapped, so the caller can
+  // open that author's profile in-app instead of the external browser.
+  onPressAuthor?: (author: AO3Link) => void;
   // Forwarded straight to the FlatList's onScroll so a parent (e.g. the app's
   // collapsible header) can track this screen's scroll position.
   onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
@@ -559,6 +562,7 @@ const AO3HistoryScreen: React.FC<Props> = ({
   title,
   onClose,
   onWorkPress,
+  onPressAuthor,
   onScroll,
   contentContainerTopPadding = 0,
   onHeaderActionsChange,
@@ -860,6 +864,7 @@ const AO3HistoryScreen: React.FC<Props> = ({
                 kind="work"
                 work={item.work}
                 onPressWork={onWorkPress ? () => onWorkPress(item.work) : undefined}
+                onPressAuthor={onPressAuthor}
               />
 
               <View style={styles.metaCard}>

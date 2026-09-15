@@ -17,7 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getUserIconUrl } from "../api/ao3Auth";
 
-export type Ao3Tab = "home" | "reader" | "history" | "bookmarks";
+export type Ao3Tab = "home" | "reader" | "history" | "bookmarks" | "profile";
 
 // Published by FanficReader (via onHeaderActionsChange) while the Reader tab
 // is active, so Ao3Header can render the fic/chapter title and the
@@ -57,6 +57,14 @@ export interface BookmarksHeaderInfo {
   onGoBack: () => void;
 }
 
+// Published by AO3ListingScreen (via onHeaderActionsChange) while it's being
+// used to view someone's profile (the "profile" tab) rather than embedded in
+// Home — same shape and same reasoning as BookmarksHeaderInfo above.
+export interface ProfileHeaderInfo {
+  title: string;
+  onGoBack: () => void;
+}
+
 interface Ao3HeaderProps {
   username: string | null;
   activeTab: Ao3Tab;
@@ -67,10 +75,11 @@ interface Ao3HeaderProps {
   // header derives its own hide/show offset from this via diffClamp, so the
   // screen only has to forward its ScrollView/FlatList's onScroll here.
   scrollY: Animated.Value;
-  // Only rendered when activeTab === "reader" / "history" / "bookmarks" respectively.
+  // Only rendered when activeTab === "reader" / "history" / "bookmarks" / "profile" respectively.
   readerHeaderInfo?: ReaderHeaderInfo | null;
   historyHeaderInfo?: HistoryHeaderInfo | null;
   bookmarksHeaderInfo?: BookmarksHeaderInfo | null;
+  profileHeaderInfo?: ProfileHeaderInfo | null;
 }
 
 export const HEADER_CONTENT_HEIGHT = 52;
@@ -91,6 +100,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
   readerHeaderInfo,
   historyHeaderInfo,
   bookmarksHeaderInfo,
+  profileHeaderInfo,
 }) => {
   const insets = useSafeAreaInsets();
   const headerHeight = HEADER_CONTENT_HEIGHT + insets.top;
@@ -173,6 +183,8 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
       historyHeaderInfo.onGoBack();
     } else if (activeTab === "bookmarks" && bookmarksHeaderInfo?.onGoBack) {
       bookmarksHeaderInfo.onGoBack();
+    } else if (activeTab === "profile" && profileHeaderInfo?.onGoBack) {
+      profileHeaderInfo.onGoBack();
     } else {
       onNavigate("home");
     }
@@ -396,6 +408,13 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
           <>
             <Text style={styles.headerTitle} numberOfLines={1}>
               {bookmarksHeaderInfo.title || "Bookmarks"}
+            </Text>
+            <View style={styles.avatarBtn} />
+          </>
+        ) : activeTab === "profile" && profileHeaderInfo ? (
+          <>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {profileHeaderInfo.title || "Profile"}
             </Text>
             <View style={styles.avatarBtn} />
           </>

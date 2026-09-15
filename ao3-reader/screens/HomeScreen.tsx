@@ -1,6 +1,7 @@
 import React from "react";
 import { View, StyleSheet, Text, NativeScrollEvent, NativeSyntheticEvent } from "react-native";
 import AO3ListingScreen, { AO3ListingItem } from "./AO3ListingScreen";
+import { AO3Link } from "../components/AO3WorkBlurb";
 
 interface Props {
   username: string | null;
@@ -14,6 +15,9 @@ interface Props {
   // Called with a username when a bookmark card's "Bookmarked by X" byline
   // is tapped, so the caller can navigate to that user's bookmarks page.
   onPressBookmarker?: (username: string) => void;
+  // Called when a work/bookmark card's author byline is tapped, so the
+  // caller can open that author's profile in-app.
+  onPressAuthor?: (author: AO3Link) => void;
 }
 
 const HomeScreen: React.FC<Props> = ({
@@ -22,6 +26,7 @@ const HomeScreen: React.FC<Props> = ({
   onScroll,
   contentContainerTopPadding,
   onPressBookmarker,
+  onPressAuthor,
 }) => {
   if (!username) {
     return (
@@ -52,6 +57,7 @@ const HomeScreen: React.FC<Props> = ({
         onScroll={onScroll}
         contentContainerTopPadding={contentContainerTopPadding}
         onPressBookmarker={onPressBookmarker}
+        onPressAuthor={onPressAuthor}
         currentUsername={username}
       />
     </View>

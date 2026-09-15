@@ -17,7 +17,7 @@ import { WebView, WebViewMessageEvent } from "react-native-webview";
 import { Ionicons } from "@expo/vector-icons";
 import { fetchWithSession } from "../api/ao3Auth";
 import { extractCsrfToken, deleteAo3Bookmark } from "../api/ao3Bookmarks";
-import AO3WorkBlurb, { AO3BookmarkData } from "../components/AO3WorkBlurb";
+import AO3WorkBlurb, { AO3BookmarkData, AO3Link } from "../components/AO3WorkBlurb";
 import BookmarkOwnerCard from "../components/BookmarkOwnerCard";
 import type { BookmarksHeaderInfo } from "../components/Ao3Header";
 
@@ -55,6 +55,11 @@ interface Props {
   // Called when the person taps the back button.
   onClose?: () => void;
   onWorkPress?: (bookmark: AO3BookmarkData) => void;
+  // Called when a bookmark card's (work) author byline is tapped, so the
+  // caller can open that author's profile in-app instead of the external
+  // browser. Distinct from BookmarkOwnerCard's "Bookmarked by X" byline,
+  // which navigates to that person's bookmarks page instead.
+  onPressAuthor?: (author: AO3Link) => void;
   // Forwarded straight to the FlatList's onScroll so a parent (e.g. the
   // app's collapsible header) can track this screen's scroll position.
   onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
@@ -516,6 +521,7 @@ const AO3BookmarksScreen: React.FC<Props> = ({
   title,
   onClose,
   onWorkPress,
+  onPressAuthor,
   onScroll,
   topInset = 0,
   onHeaderActionsChange,
@@ -743,6 +749,7 @@ const AO3BookmarksScreen: React.FC<Props> = ({
                 kind="bookmark"
                 bookmark={item}
                 onPressWork={onWorkPress ? () => onWorkPress(item) : undefined}
+                onPressAuthor={onPressAuthor}
               />
               <BookmarkOwnerCard
                 bookmark={item}
