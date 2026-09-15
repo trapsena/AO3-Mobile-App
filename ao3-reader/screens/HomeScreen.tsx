@@ -11,9 +11,18 @@ interface Props {
   // track this screen's scroll position.
   onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
   contentContainerTopPadding?: number;
+  // Called with a username when a bookmark card's "Bookmarked by X" byline
+  // is tapped, so the caller can navigate to that user's bookmarks page.
+  onPressBookmarker?: (username: string) => void;
 }
 
-const HomeScreen: React.FC<Props> = ({ username, onOpenReader, onScroll, contentContainerTopPadding }) => {
+const HomeScreen: React.FC<Props> = ({
+  username,
+  onOpenReader,
+  onScroll,
+  contentContainerTopPadding,
+  onPressBookmarker,
+}) => {
   if (!username) {
     return (
       <View style={styles.container}>
@@ -42,6 +51,8 @@ const HomeScreen: React.FC<Props> = ({ username, onOpenReader, onScroll, content
         onItemPress={handleItemPress}
         onScroll={onScroll}
         contentContainerTopPadding={contentContainerTopPadding}
+        onPressBookmarker={onPressBookmarker}
+        currentUsername={username}
       />
     </View>
   );

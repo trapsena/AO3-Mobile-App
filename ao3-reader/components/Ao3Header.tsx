@@ -16,7 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getUserIconUrl } from "../api/ao3Auth";
 
-export type Ao3Tab = "home" | "reader" | "history";
+export type Ao3Tab = "home" | "reader" | "history" | "bookmarks";
 
 // Published by FanficReader (via onHeaderActionsChange) while the Reader tab
 // is active, so Ao3Header can render the fic/chapter title and the
@@ -42,6 +42,14 @@ export interface HistoryHeaderInfo {
   onClearHistory: () => void;
 }
 
+// Published by AO3BookmarksScreen (via onHeaderActionsChange) while the
+// Bookmarks screen is active — that screen isn't a persistent nav tab (it's
+// opened by tapping a "Bookmarked by X" byline elsewhere), so it just needs
+// a title here; its own in-screen back button handles returning.
+export interface BookmarksHeaderInfo {
+  title: string;
+}
+
 interface Ao3HeaderProps {
   username: string | null;
   activeTab: Ao3Tab;
@@ -52,9 +60,10 @@ interface Ao3HeaderProps {
   // header derives its own hide/show offset from this via diffClamp, so the
   // screen only has to forward its ScrollView/FlatList's onScroll here.
   scrollY: Animated.Value;
-  // Only rendered when activeTab === "reader" / "history" respectively.
+  // Only rendered when activeTab === "reader" / "history" / "bookmarks" respectively.
   readerHeaderInfo?: ReaderHeaderInfo | null;
   historyHeaderInfo?: HistoryHeaderInfo | null;
+  bookmarksHeaderInfo?: BookmarksHeaderInfo | null;
 }
 
 export const HEADER_CONTENT_HEIGHT = 52;
@@ -74,6 +83,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
   scrollY,
   readerHeaderInfo,
   historyHeaderInfo,
+  bookmarksHeaderInfo,
 }) => {
   const insets = useSafeAreaInsets();
   const headerHeight = HEADER_CONTENT_HEIGHT + insets.top;
@@ -252,6 +262,13 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
             <TouchableOpacity onPress={historyHeaderInfo.onClearHistory} style={styles.actionBtn}>
               <Ionicons name="trash-outline" size={20} color="#f66" />
             </TouchableOpacity>
+          </>
+        ) : activeTab === "bookmarks" && bookmarksHeaderInfo ? (
+          <>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {bookmarksHeaderInfo.title || "Bookmarks"}
+            </Text>
+            <View style={styles.avatarBtn} />
           </>
         ) : (
           <>

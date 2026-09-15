@@ -5,11 +5,13 @@ import FanficReader from "./screens/FanficReader";
 import LoginScreen from "./screens/LoginScreen";
 import HomeScreen from "./screens/HomeScreen";
 import AO3HistoryScreen from "./screens/AO3HistoryScreen";
+import AO3BookmarksScreen from "./screens/AO3BookmarksScreen";
 import Ao3Header, {
   Ao3Tab,
   HEADER_CONTENT_HEIGHT,
   ReaderHeaderInfo,
   HistoryHeaderInfo,
+  BookmarksHeaderInfo,
 } from "./components/Ao3Header";
 import { useAO3Session } from "./hooks/useao3Auth";
 
@@ -17,8 +19,10 @@ const AppContent: React.FC = () => {
   const { session, username, loading, login, logout } = useAO3Session();
   const [activeTab, setActiveTab] = useState<Ao3Tab>("home");
   const [readerUrl, setReaderUrl] = useState<string | null>(null);
+  const [bookmarksUsername, setBookmarksUsername] = useState<string | null>(null);
   const [readerHeaderInfo, setReaderHeaderInfo] = useState<ReaderHeaderInfo | null>(null);
   const [historyHeaderInfo, setHistoryHeaderInfo] = useState<HistoryHeaderInfo | null>(null);
+  const [bookmarksHeaderInfo, setBookmarksHeaderInfo] = useState<BookmarksHeaderInfo | null>(null);
   const insets = useSafeAreaInsets();
   const headerHeight = HEADER_CONTENT_HEIGHT + insets.top;
 
@@ -54,6 +58,18 @@ const AppContent: React.FC = () => {
     setActiveTab("reader");
   };
 
+  // Called when a bookmark card's "Bookmarked by X" byline is tapped —
+  // navigates to that user's public bookmarks page in-app instead of
+  // opening it in the external browser.
+  const openBookmarks = (targetUsername?: string) => {
+    if (!targetUsername) {
+      console.warn("[App] openBookmarks called without a username, ignoring");
+      return;
+    }
+    setBookmarksUsername(targetUsername);
+    setActiveTab("bookmarks");
+  };
+
   if (loading) {
     return (
       <View style={styles.container}>
@@ -86,6 +102,7 @@ const AppContent: React.FC = () => {
           onOpenReader={openReader}
           onScroll={handleScroll}
           contentContainerTopPadding={headerHeight}
+          onPressBookmarker={openBookmarks}
         />
       ) : activeTab === "history" ? (
         <AO3HistoryScreen
@@ -94,6 +111,20 @@ const AppContent: React.FC = () => {
           onScroll={handleScroll}
           contentContainerTopPadding={headerHeight}
           onHeaderActionsChange={setHistoryHeaderInfo}
+        />
+      ) : activeTab === "bookmarks" ? (
+        <AO3BookmarksScreen
+          // Remount per user so switching whose bookmarks we're viewing
+          // resets pagination/scroll cleanly, the same way FanficReader
+          // remounts per fic.
+          key={bookmarksUsername ?? "no-bookmarks-user"}
+          username={bookmarksUsername ?? ""}
+          currentUsername={username}
+          onClose={() => setActiveTab("home")}
+          onWorkPress={(bookmark) => openReader(bookmark.workUrl)}
+          onScroll={handleScroll}
+          topInset={headerHeight}
+          onHeaderActionsChange={setBookmarksHeaderInfo}
         />
       ) : (
         <FanficReader
@@ -119,6 +150,7 @@ const AppContent: React.FC = () => {
         onLogout={logout}
         readerHeaderInfo={readerHeaderInfo}
         historyHeaderInfo={historyHeaderInfo}
+        bookmarksHeaderInfo={bookmarksHeaderInfo}
         scrollY={scrollY}
       />
     </View>

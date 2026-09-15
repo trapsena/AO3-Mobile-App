@@ -6,6 +6,8 @@ import {
   Linking,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -14,9 +16,111 @@ import {
 import { WebView, WebViewMessageEvent } from "react-native-webview";
 import { Ionicons } from "@expo/vector-icons";
 import { fetchWithSession } from "../api/ao3Auth";
-import { extractUsernameFromUsersUrl, extractCsrfToken, deleteAo3Bookmark } from "../api/ao3Bookmarks";
-import AO3WorkBlurb, { AO3BookmarkData, AO3BlurbKind, AO3WorkBlurbData } from "../components/AO3WorkBlurb";
+import { extractCsrfToken, deleteAo3Bookmark } from "../api/ao3Bookmarks";
+import AO3WorkBlurb, { AO3BookmarkData } from "../components/AO3WorkBlurb";
 import BookmarkOwnerCard from "../components/BookmarkOwnerCard";
+import type { BookmarksHeaderInfo } from "../components/Ao3Header";
+
+/* ------------------------------------------------------------------ */
+/* Types                                                               */
+/* ------------------------------------------------------------------ */
+
+interface AO3PaginationPage {
+  label: string;
+  href?: string;
+  isCurrent?: boolean;
+  isGap?: boolean;
+  isPrev?: boolean;
+  isNext?: boolean;
+  disabled?: boolean;
+}
+
+interface AO3Pagination {
+  pages: AO3PaginationPage[];
+  currentPage: number;
+  totalPages?: number;
+  prevHref?: string;
+  nextHref?: string;
+}
+
+interface Props {
+  // Whose bookmarks page to load.
+  username: string;
+  // The currently logged-in user (from the session), used only to decide
+  // whether to show the Edit/Delete/Add to Collection/Share actions — those
+  // only make sense (and only actually exist server-side) when this matches
+  // `username`.
+  currentUsername?: string | null;
+  title?: string;
+  // Called when the person taps the back button.
+  onClose?: () => void;
+  onWorkPress?: (bookmark: AO3BookmarkData) => void;
+  // Forwarded straight to the FlatList's onScroll so a parent (e.g. the
+  // app's collapsible header) can track this screen's scroll position.
+  onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  // Space reserved for the app's header overlay (and this screen's own back
+  // button), the same value doing double duty as both the FlatList content's
+  // top padding and the back button's vertical offset.
+  topInset?: number;
+  // Published whenever this screen's title changes (and cleared with `null`
+  // on unmount) so the app's global Ao3Header can render it instead of this
+  // component drawing its own title bar.
+  onHeaderActionsChange?: (info: BookmarksHeaderInfo | null) => void;
+}
+
+/* ------------------------------------------------------------------ */
+/* URL helpers                                                         */
+/* ------------------------------------------------------------------ */
+
+const bookmarksBaseUrl = (username: string) =>
+  `https://archiveofourown.org/users/${encodeURIComponent(username)}/bookmarks`;
+
+// Appends a timestamp so every request hits AO3's origin fresh instead of
+// potentially being served a cached response for a URL we've already
+// fetched (mirrors AO3HistoryScreen's same cache-busting need).
+const withCacheBust = (url: string) => {
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}_=${Date.now()}`;
+};
+
+// The WebView only reloads (and only re-runs the extractor script) when the
+// `source.html` string it's given actually changes — prefixing a unique
+// comment guarantees a resync always forces a real reload + re-extraction.
+const tagHtmlForReload = (html: string) =>
+  `<!-- ao3-bookmarks-sync:${Date.now()}:${Math.random().toString(36).slice(2)} -->\n${html}`;
+
+async function fetchBookmarksHtml(url: string): Promise<string | null> {
+  const bustedUrl = withCacheBust(url);
+  try {
+    const res = await fetchWithSession(bustedUrl);
+    console.log("[AO3BookmarksScreen] List fetch response", {
+      url: bustedUrl,
+      status: res.status,
+      ok: res.ok,
+      redirected: res.redirected,
+      finalUrl: res.url,
+    });
+    if (!res.ok) {
+      console.warn("[AO3BookmarksScreen] List fetch was not ok", {
+        status: res.status,
+        statusText: res.statusText,
+      });
+      return null;
+    }
+    return await res.text();
+  } catch (err: any) {
+    console.warn("[AO3BookmarksScreen] List fetch threw an error:", {
+      name: err?.name,
+      message: err?.message,
+      stack: err?.stack,
+    });
+    return null;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Hidden WebView (HTML -> structured data extractor)                  */
+/* ------------------------------------------------------------------ */
 
 const HiddenWebView = React.forwardRef<any, any>((props, ref) => (
   <View
@@ -33,43 +137,9 @@ const HiddenWebView = React.forwardRef<any, any>((props, ref) => (
     <WebView {...props} ref={ref} />
   </View>
 ));
-HiddenWebView.displayName = "AO3ListingExtractorWebView";
+HiddenWebView.displayName = "AO3BookmarksExtractorWebView";
 
-export interface AO3ListingItem {
-  id: string;
-  kind: AO3BlurbKind;
-  work?: AO3WorkBlurbData;
-  bookmark?: AO3BookmarkData;
-}
-
-export interface AO3ListingGroup {
-  key: string;
-  title: string;
-  items: AO3ListingItem[];
-}
-
-interface Props {
-  url: string;
-  title?: string;
-  showHeader?: boolean;
-  onGroupsLoaded?: (groups: AO3ListingGroup[]) => void;
-  onItemPress?: (item: AO3ListingItem) => void;
-  // Forwarded straight to the SectionList's onScroll so a parent (e.g. the
-  // app's collapsible header) can track this screen's scroll position.
-  onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
-  contentContainerTopPadding?: number;
-  // Called with a username when a bookmark card's "Bookmarked by X" byline
-  // is tapped, so the caller can navigate to that user's bookmarks page
-  // in-app instead of opening it in the external browser.
-  onPressBookmarker?: (username: string) => void;
-  // The currently logged-in user (from the session), used only to decide
-  // whether to show the Edit/Delete/Add to Collection/Share actions on a
-  // bookmark — those only make sense (and only actually exist server-side)
-  // when this matches the bookmark's own profile.
-  currentUsername?: string | null;
-}
-
-const LISTING_INJECTED_JS = `
+const BOOKMARKS_INJECTED_JS = `
 (function() {
   function abs(href) {
     if (!href) return null;
@@ -147,7 +217,7 @@ const LISTING_INJECTED_JS = `
   function collectRequired(root) {
     function classToIconClass(className) {
       if (!className) return null;
-      var classes = String(className).split(/\s+/).filter(Boolean);
+      var classes = String(className).split(/\\s+/).filter(Boolean);
       var known = classes.find(function(cls) {
         return /^(rating-|warning-|category-|complete-|status-)/.test(cls);
       });
@@ -234,84 +304,6 @@ const LISTING_INJECTED_JS = `
     return ps.length ? ps.join("\\n\\n") : text(el);
   }
 
-  function collectSeries(root) {
-    var el = firstMatch(root, [".series"]);
-    if (!el) return null;
-    var a = el.querySelector("a");
-    var part = el.querySelector("strong");
-    return {
-      part: part ? text(part) : undefined,
-      title: a ? text(a) : text(el),
-      href: a ? abs(a.getAttribute("href")) || undefined : undefined,
-    };
-  }
-
-  function findGroupTitle(el) {
-    var current = el;
-    while (current) {
-      var sibling = current.previousElementSibling;
-      while (sibling) {
-        var heading = sibling.matches && sibling.matches("h1,h2,h3,h4,h5,h6") ? sibling : sibling.querySelector && sibling.querySelector("h1,h2,h3,h4,h5,h6");
-        if (heading) {
-          var headingText = text(heading);
-          if (headingText) return headingText;
-        }
-        sibling = sibling.previousElementSibling;
-      }
-      current = current.parentElement;
-    }
-    return document.title || "AO3 Listing";
-  }
-
-  function blurbKind(root) {
-    if (root.classList.contains("bookmark")) return "bookmark";
-    return "work";
-  }
-
-  function parseWork(root) {
-    var titleLink = firstMatch(root, ["h4.heading a", ".header h4 a", "a[href*='/works/']"]);
-    var authorLink = root.querySelector("a[rel='author']");
-    var fandomLinks = collectTags(root, ["h5.fandoms a.tag", ".fandoms a.tag"]);
-    var commaTags = collectCommaTags(root);
-    var required = collectRequired(root);
-    var stats = collectStats(root);
-    return {
-      id: root.id || "",
-      kind: "work",
-      work: {
-        id: root.id || "",
-        title: titleLink ? text(titleLink) : text(root),
-        workUrl: titleLink ? abs(titleLink.getAttribute("href")) || undefined : undefined,
-        author: authorLink ? { label: text(authorLink), href: abs(authorLink.getAttribute("href")) || undefined } : undefined,
-        fandoms: fandomLinks.length ? fandomLinks : undefined,
-        tags: {
-          warnings: commaTags.warnings.length ? commaTags.warnings.map(function(tag) { return tag.label; }) : undefined,
-          relationships: commaTags.relationships.length ? commaTags.relationships.map(function(tag) { return tag.label; }) : undefined,
-          characters: commaTags.characters.length ? commaTags.characters.map(function(tag) { return tag.label; }) : undefined,
-          freeforms: commaTags.freeforms.length ? commaTags.freeforms.map(function(tag) { return tag.label; }) : undefined,
-        },
-        rating: required.rating,
-        warnings: required.warnings,
-        category: required.category,
-        status: required.status,
-        requiredTags: required,
-        requiredTagIcons: required.icons,
-        publishedAt: text(root.querySelector(".datetime")) || undefined,
-        summary: collectSummary(root) || undefined,
-        series: collectSeries(root) || undefined,
-        stats: {
-          language: stats.language,
-          words: stats.words,
-          chapters: stats.chapters,
-          kudos: stats.kudos,
-          hits: stats.hits,
-          comments: stats.comments,
-          bookmarks: stats.bookmarks,
-        },
-      }
-    };
-  }
-
   function parseOwnActions(ownModule) {
     if (!ownModule) return undefined;
     var actionsList = ownModule.querySelector("ul.actions");
@@ -337,15 +329,14 @@ const LISTING_INJECTED_JS = `
     };
   }
 
-  function parseBookmark(root) {
-    var titleLink = firstMatch(root, ["h4.heading a", ".header h4 a", "a[href*='/works/']"]);
+  function parseBookmarkItem(root) {
+    var titleLink = firstMatch(root, ["h4.heading a", ".header h4 a", "a[href*='/works/']", "a[href*='/series/']"]);
     var workAuthor = root.querySelector("a[rel='author']");
 
     // The bookmarker's own info (byline, date bookmarked, their tags, their
     // notes, and — when this is the logged-in user's own bookmark — the
     // Edit/Delete/etc actions) all live inside this block, separate from
-    // the work's own info above it. Scoping to it avoids picking up the
-    // work's data by mistake.
+    // the work's own info above it.
     var ownModule = firstMatch(root, [".own.user.module.group", ".user.module.group"]);
     var isOwnModule = !!(ownModule && ownModule.classList && ownModule.classList.contains("own"));
 
@@ -364,10 +355,6 @@ const LISTING_INJECTED_JS = `
     var statusLinkNode = statusSlot && statusSlot.querySelector("a");
     var countNode = firstMatch(root, ["p.status .count a", ".status .count a", ".count a", ".status .count"]);
 
-    // A bookmark blurb has TWO ".datetime" elements: the work's own publish
-    // date (inside .header.module, earlier in the DOM) and the bookmark's
-    // own "bookmarked on" date (inside .own.user.module.group). Prefer the
-    // latter explicitly instead of just grabbing the first ".datetime" found.
     var datetimeNode = (ownModule && ownModule.querySelector("p.datetime")) || firstMatch(root, [".datetime", "p.datetime"]);
 
     var userMetaContainer = ownModule
@@ -392,14 +379,13 @@ const LISTING_INJECTED_JS = `
     var stats = collectStats(root);
     var className = statusIconNode ? statusIconNode.className : (statusSlot ? statusSlot.className : "");
     var fullClassName = className || "";
-    var spriteClassName = (fullClassName && fullClassName.split(/\s+/).filter(Boolean).find(function(cls) {
+    var spriteClassName = (fullClassName && fullClassName.split(/\\s+/).filter(Boolean).find(function(cls) {
       return /^(public|private|hidden|rec)/.test(cls);
     })) || "public";
+
     var ownActions = parseOwnActions(ownModule);
+
     return {
-      id: root.id || "",
-      kind: "bookmark",
-      bookmark: {
         id: root.id || "",
         isOwnModule: isOwnModule,
         ownActions: ownActions,
@@ -419,9 +405,6 @@ const LISTING_INJECTED_JS = `
         count: countNode ? text(countNode) : undefined,
         datetime: datetimeNode ? text(datetimeNode) : undefined,
         userMeta: userMeta.length ? userMeta : undefined,
-        // Prefer the bookmarker's own note; there's no separate UI slot for
-        // the work's own summary on a bookmark card right now, so leave this
-        // blank rather than mislabeling the work's summary as "Notes".
         summary: notes || undefined,
         fandoms: fandomLinks.length ? fandomLinks : undefined,
         tags: {
@@ -439,127 +422,82 @@ const LISTING_INJECTED_JS = `
           comments: stats.comments,
           bookmarks: stats.bookmarks,
         },
-      }
     };
   }
 
-  function parseGroup(root) {
-    var title = findGroupTitle(root);
-    var items = [];
-    var blurbs = Array.from(root.querySelectorAll("li.work.blurb, li.bookmark.blurb"));
-    if (root.matches && (root.matches("li.work.blurb") || root.matches("li.bookmark.blurb"))) {
-      blurbs = [root].concat(blurbs);
-    }
-
+  function collectBookmarks() {
+    var nodes = Array.from(document.querySelectorAll("li.bookmark.blurb"));
     var seen = new Set();
-    blurbs.forEach(function(node) {
-      if (!node || !node.classList) return;
-      var id = node.id || text(node.querySelector("h4.heading a")) || text(node);
+    var items = [];
+    nodes.forEach(function(node) {
+      var id = node.id || "";
       if (!id || seen.has(id)) return;
       seen.add(id);
-      if (node.classList.contains("bookmark")) {
-        items.push(parseBookmark(node));
-      } else {
-        items.push(parseWork(node));
-      }
+      items.push(parseBookmarkItem(node));
+    });
+    return items;
+  }
+
+  function collectPagination() {
+    var container = firstMatch(document, ["ol.pagination.actions.pagy", "ol.pagination.actions", "ol.pagination"]);
+    if (!container) return null;
+
+    var items = Array.from(container.querySelectorAll("li"));
+    var pages = items.map(function(li) {
+      var a = li.querySelector("a");
+      var span = li.querySelector("span");
+      var label = text(a || span || li);
+      var isPrev = li.classList.contains("previous");
+      var isNext = li.classList.contains("next");
+      var isGap = li.classList.contains("gap") || (!a && !isPrev && !isNext && /^(…|\\.\\.\\.)$/.test(label));
+      var isCurrent = li.classList.contains("current") || (a && a.classList.contains("current")) || (a && a.getAttribute("aria-current") === "page");
+      var disabled = !a && !!span;
+      return {
+        label: label,
+        href: a ? abs(a.getAttribute("href")) || undefined : undefined,
+        isCurrent: isCurrent,
+        isGap: isGap,
+        isPrev: isPrev,
+        isNext: isNext,
+        disabled: disabled,
+      };
+    });
+
+    var currentItem = pages.find(function(p) { return p.isCurrent; });
+    var prevItem = pages.find(function(p) { return p.isPrev; });
+    var nextItem = pages.find(function(p) { return p.isNext; });
+
+    var maxPage = 0;
+    pages.forEach(function(p) {
+      if (p.isPrev || p.isNext || p.isGap) return;
+      var n = parseInt(p.label, 10);
+      if (!isNaN(n) && n > maxPage) maxPage = n;
     });
 
     return {
-      key: title + "::" + (root.id || "root"),
-      title: title,
-      items: items,
+      pages: pages,
+      currentPage: currentItem ? (parseInt(currentItem.label, 10) || 1) : 1,
+      totalPages: maxPage || undefined,
+      prevHref: prevItem && !prevItem.disabled ? prevItem.href : undefined,
+      nextHref: nextItem && !nextItem.disabled ? nextItem.href : undefined,
     };
-  }
-
-  function collectGroups() {
-    var candidates = Array.from(document.querySelectorAll("ol.group, ul.group, .group, section, main"));
-    var blurbs = Array.from(document.querySelectorAll("li.work.blurb, li.bookmark.blurb"));
-
-    if (blurbs.length === 0) {
-      var fallback = Array.from(document.querySelectorAll("li"));
-      blurbs = fallback.filter(function(node) {
-        return node.classList && (node.classList.contains("work") || node.classList.contains("bookmark")) && node.classList.contains("blurb");
-      });
-    }
-
-    if (blurbs.length === 0) return [];
-
-    if (candidates.length === 0) {
-      return [{
-        key: "default",
-        title: document.title || "AO3 Listing",
-        items: blurbs.map(function(node) {
-          return node.classList.contains("bookmark") ? parseBookmark(node) : parseWork(node);
-        })
-      }];
-    }
-
-    var groups = [];
-    var used = new Set();
-
-    candidates.forEach(function(container) {
-      var localBlurbs = Array.from(container.querySelectorAll("li.work.blurb, li.bookmark.blurb"));
-      if (localBlurbs.length === 0) return;
-
-      var parsed = parseGroup(container);
-      if (!parsed.items.length) return;
-
-      parsed.items.forEach(function(item) {
-        used.add(item.id);
-      });
-      groups.push(parsed);
-    });
-
-    var remaining = blurbs.filter(function(node) {
-      return !used.has(node.id || "");
-    });
-
-    if (remaining.length) {
-      groups.push({
-        key: "ungrouped",
-        title: "Ungrouped",
-        items: remaining.map(function(node) {
-          return node.classList.contains("bookmark") ? parseBookmark(node) : parseWork(node);
-        })
-      });
-    }
-
-    var deduped = [];
-    var groupSeen = new Set();
-    groups.forEach(function(group) {
-      if (groupSeen.has(group.key)) return;
-      groupSeen.add(group.key);
-      deduped.push(group);
-    });
-
-    // For now, only surface the "Recent Bookmarks" group — the page also
-    // renders a full "Bookmarks" listing which duplicates most of the same
-    // items and was what looked like the list "reloading" after itself.
-    var recentOnly = deduped.filter(function(group) {
-      return /recent\\s+bookmarks?/i.test(group.title || "");
-    });
-
-    if (recentOnly.length) return recentOnly;
-
-    // Fallback: title text didn't match (page markup may differ). Rather
-    // than silently show nothing, fall back to everything and log why.
-    console.warn("[AO3ListingScreen] No group titled like 'Recent Bookmarks' found; showing all groups. Titles seen:", deduped.map(function(g) { return g.title; }));
-    return deduped;
   }
 
   setTimeout(function() {
     try {
-      var groups = collectGroups();
+      var headingEl = document.querySelector("h2.heading");
       var csrfMeta = document.querySelector('meta[name="csrf-token"]');
       window.ReactNativeWebView.postMessage(JSON.stringify({
-        type: "listingData",
+        type: "bookmarksData",
         pageTitle: document.title || "",
-        groups: groups,
+        listHeading: headingEl ? text(headingEl) : "",
+        items: collectBookmarks(),
+        pagination: collectPagination(),
         csrfToken: csrfMeta ? csrfMeta.getAttribute("content") : null,
       }));
     } catch (err) {
       window.ReactNativeWebView.postMessage(JSON.stringify({
-        type: "listingError",
+        type: "bookmarksError",
         error: String(err && err.message ? err.message : err),
       }));
     }
@@ -568,82 +506,76 @@ const LISTING_INJECTED_JS = `
 true;
 `;
 
-const AO3ListingScreen: React.FC<Props> = ({
-  url,
-  title,
-  showHeader = true,
-  onGroupsLoaded,
-  onItemPress,
-  onScroll,
-  contentContainerTopPadding = 0,
-  onPressBookmarker,
+/* ------------------------------------------------------------------ */
+/* Screen                                                               */
+/* ------------------------------------------------------------------ */
+
+const AO3BookmarksScreen: React.FC<Props> = ({
+  username,
   currentUsername,
+  title,
+  onClose,
+  onWorkPress,
+  onScroll,
+  topInset = 0,
+  onHeaderActionsChange,
 }) => {
   const webRef = useRef<any>(null);
   const lastPayloadRef = useRef<string | null>(null);
+  const listRef = useRef<any>(null);
+
+  const [currentUrl, setCurrentUrl] = useState(() => bookmarksBaseUrl(username));
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [pageTitle, setPageTitle] = useState(title || "");
-  const [groups, setGroups] = useState<AO3ListingGroup[]>([]);
+  const [items, setItems] = useState<AO3BookmarkData[]>([]);
+  const [pagination, setPagination] = useState<AO3Pagination | null>(null);
   const [sourceHtml, setSourceHtml] = useState<string | null>(null);
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
 
-  // Derived from `url` rather than a dedicated prop, so this keeps working
-  // once this screen is reused to render other users' profiles (not just
-  // the logged-in one) — whatever "/users/<name>" the page being shown
-  // belongs to is whose bookmarks the button below should link to.
-  const profileUsername = useMemo(() => extractUsernameFromUsersUrl(url), [url]);
-
   const isOwnUser =
-    !!currentUsername &&
-    !!profileUsername &&
-    currentUsername.trim().toLowerCase() === profileUsername.trim().toLowerCase();
+    !!currentUsername && currentUsername.trim().toLowerCase() === username.trim().toLowerCase();
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
-    setGroups([]);
     setSourceHtml(null);
 
-    let cancelled = false;
-
     (async () => {
-      try {
-        const res = await fetchWithSession(url);
-        if (!res.ok) {
-          return;
-        }
-        const html = await res.text();
-        if (cancelled) return;
-        setSourceHtml(html);
-      } catch (err) {
-        console.warn("[AO3ListingScreen] Session fetch failed, falling back to direct page load:", err);
-      }
+      const html = await fetchBookmarksHtml(currentUrl);
+      if (cancelled || !html) return;
+      setSourceHtml(tagHtmlForReload(html));
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [url]);
+  }, [currentUrl]);
 
-  const sections = useMemo(
-    () => groups.map((group) => ({ key: group.key, title: group.title, data: group.items })),
-    [groups],
-  );
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    const html = await fetchBookmarksHtml(currentUrl);
+    if (html) {
+      setSourceHtml(tagHtmlForReload(html));
+    } else {
+      setRefreshing(false);
+    }
+  }, [currentUrl]);
 
-  const itemsById = useMemo(() => {
-    const map = new Map<string, AO3ListingItem>();
-    groups.forEach((group) => {
-      group.items.forEach((entry) => map.set(entry.id, entry));
-    });
-    return map;
-  }, [groups]);
+  const resetListPosition = useCallback(() => {
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
+  }, []);
 
-  const handlePressWork = useCallback(
-    (data: AO3WorkBlurbData | AO3BookmarkData) => {
-      const entry = itemsById.get(String(data.id));
-      if (entry) onItemPress?.(entry);
+  const goToUrl = useCallback(
+    (url?: string) => {
+      if (!url) return;
+      setItems([]);
+      setPagination(null);
+      setCurrentUrl(url);
+      resetListPosition();
     },
-    [itemsById, onItemPress],
+    [resetListPosition],
   );
 
   const handleMessage = (e: WebViewMessageEvent) => {
@@ -652,46 +584,46 @@ const AO3ListingScreen: React.FC<Props> = ({
       lastPayloadRef.current = e.nativeEvent.data;
 
       const payload = JSON.parse(e.nativeEvent.data);
-      if (payload.type === "listingData") {
-        setPageTitle(payload.pageTitle || title || "");
-        const nextGroups = Array.isArray(payload.groups) ? payload.groups : [];
-        setGroups(nextGroups);
-        onGroupsLoaded?.(nextGroups);
+      if (payload.type === "bookmarksData") {
+        setPageTitle(payload.listHeading || payload.pageTitle || title || "");
+        setItems(Array.isArray(payload.items) ? payload.items : []);
+        setPagination(payload.pagination || null);
         if (payload.csrfToken) setCsrfToken(payload.csrfToken);
-      } else if (payload.type === "listingError") {
-        console.warn("[AO3ListingScreen] Listing extraction failed:", payload.error);
+      } else if (payload.type === "bookmarksError") {
+        console.warn("[AO3BookmarksScreen] Bookmarks extraction failed:", payload.error);
       }
     } catch (err) {
-      console.warn("[AO3ListingScreen] Could not parse listing payload:", err);
+      console.warn("[AO3BookmarksScreen] Could not parse bookmarks payload:", err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const handleEditBookmark = useCallback((href: string) => {
+  const handleEdit = useCallback((href: string) => {
     Linking.openURL(href).catch((err) => {
-      console.warn("[AO3ListingScreen] Could not open edit URL:", err);
+      console.warn("[AO3BookmarksScreen] Could not open edit URL:", err);
     });
   }, []);
 
-  const handleAddBookmarkToCollection = useCallback((href: string) => {
+  const handleAddToCollection = useCallback((href: string) => {
     Linking.openURL(href).catch((err) => {
-      console.warn("[AO3ListingScreen] Could not open add-to-collection URL:", err);
+      console.warn("[AO3BookmarksScreen] Could not open add-to-collection URL:", err);
     });
   }, []);
 
-  const handleShareBookmark = useCallback((href: string) => {
+  const handleShare = useCallback((href: string) => {
     Linking.openURL(href).catch((err) => {
-      console.warn("[AO3ListingScreen] Could not open share URL:", err);
+      console.warn("[AO3BookmarksScreen] Could not open share URL:", err);
     });
   }, []);
 
-  const handleDeleteBookmark = useCallback(
+  const handleDelete = useCallback(
     (bookmark: AO3BookmarkData) => {
       const deleteHref = bookmark.ownActions?.deleteHref;
       const id = String(bookmark.id);
       if (!deleteHref) {
-        console.warn("[AO3ListingScreen] Delete skipped — missing deleteHref", { id });
+        console.warn("[AO3BookmarksScreen] Delete skipped — missing deleteHref", { id });
         return;
       }
 
@@ -706,30 +638,20 @@ const AO3ListingScreen: React.FC<Props> = ({
             try {
               let token = csrfToken;
               if (!token) {
-                try {
-                  const res = await fetchWithSession(url);
-                  const freshHtml = res.ok ? await res.text() : null;
-                  token = freshHtml ? extractCsrfToken(freshHtml) ?? null : null;
-                } catch (err) {
-                  console.warn("[AO3ListingScreen] Could not refresh CSRF token:", err);
-                }
+                const freshHtml = await fetchBookmarksHtml(currentUrl);
+                token = freshHtml ? extractCsrfToken(freshHtml) ?? null : null;
               }
 
               if (!token) {
-                console.warn("[AO3ListingScreen] Delete skipped — no CSRF token available");
+                console.warn("[AO3BookmarksScreen] Delete skipped — no CSRF token available");
                 Alert.alert("Couldn't remove", "AO3 did not provide a fresh delete token. Reload this list and try again.");
                 return;
               }
 
-              const result = await deleteAo3Bookmark(deleteHref, token, url);
+              const result = await deleteAo3Bookmark(deleteHref, token, currentUrl);
 
               if (result.ok) {
-                setGroups((prev) =>
-                  prev.map((group) => ({
-                    ...group,
-                    items: group.items.filter((entry) => String(entry.bookmark?.id ?? entry.id) !== id),
-                  })),
-                );
+                setItems((prev) => prev.filter((entry) => String(entry.id) !== id));
                 return;
               }
 
@@ -754,34 +676,57 @@ const AO3ListingScreen: React.FC<Props> = ({
         },
       ]);
     },
-    [csrfToken, url],
+    [csrfToken, currentUrl],
   );
+
+  useEffect(() => {
+    onHeaderActionsChange?.({
+      title: pageTitle || title || `${username}'s Bookmarks`,
+    });
+  }, [pageTitle, title, username, onHeaderActionsChange]);
+
+  // Separate from the effect above so the "clear on unmount" cleanup doesn't
+  // also fire (and briefly flicker the header) on every title update — this
+  // one's dependency array never changes, so its cleanup only runs once,
+  // when the screen actually unmounts.
+  useEffect(() => {
+    return () => onHeaderActionsChange?.(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const numericPages = useMemo(
+    () => (pagination?.pages || []).filter((p) => !p.isPrev && !p.isNext),
+    [pagination],
+  );
+
+  const hasPagination =
+    !!pagination && (!!pagination.prevHref || !!pagination.nextHref || numericPages.length > 1);
 
   return (
     // No paddingTop here: this box must stay full-screen (a background
-    // layer) so the SectionList underneath can scroll its content behind
-    // the app's absolutely-positioned header rather than starting after it.
+    // layer) so the FlatList underneath can scroll its content behind the
+    // app's absolutely-positioned header rather than starting after it.
     <View style={styles.container}>
-      {showHeader ? (
-        <View style={styles.header}>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {pageTitle || title || "AO3 Listing"}
-          </Text>
-          <Text style={styles.headerSubtitle}>
-            {groups.length} group{groups.length === 1 ? "" : "s"}
-          </Text>
-        </View>
+      {onClose ? (
+        <TouchableOpacity
+          onPress={onClose}
+          style={[styles.backBtn, { top: topInset + 12 }]}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="arrow-back" size={22} color="#fff" />
+        </TouchableOpacity>
       ) : null}
 
       {loading ? (
-        <View style={[styles.loading, { paddingTop: contentContainerTopPadding }]}>
+        <View style={[styles.loading, { paddingTop: topInset }]}>
           <ActivityIndicator size="large" color="#7ec14b" />
-          <Text style={styles.loadingText}>Reading blurbs...</Text>
+          <Text style={styles.loadingText}>Loading bookmarks...</Text>
         </View>
       ) : (
-        <Animated.SectionList
-          sections={sections}
-          keyExtractor={(item, index) => item.id || String(index)}
+        <Animated.FlatList
+          ref={listRef}
+          data={items}
+          keyExtractor={(item, index) => String(item.id) || String(index)}
           // The header-height reserve lives here, on the scrollable content
           // itself, not on the outer View — so the list's own box still
           // spans the full screen and can be scrolled/pulled up underneath
@@ -789,48 +734,34 @@ const AO3ListingScreen: React.FC<Props> = ({
           // starts safely below it.
           contentContainerStyle={[
             styles.listContent,
-            { paddingTop: styles.listContent.padding + (contentContainerTopPadding || 0) },
+            { paddingTop: styles.listContent.padding + (topInset || 0) },
           ]}
           onScroll={onScroll}
           scrollEventThrottle={16}
-          stickySectionHeadersEnabled={false}
-          ListHeaderComponent={
-            profileUsername && onPressBookmarker ? (
-              <TouchableOpacity
-                style={styles.viewBookmarksBtn}
-                onPress={() => onPressBookmarker(profileUsername)}
-              >
-                <Ionicons name="bookmark-outline" size={16} color="#000" />
-                <Text style={styles.viewBookmarksBtnText} numberOfLines={1}>
-                  View {profileUsername}'s Bookmarks
-                </Text>
-              </TouchableOpacity>
-            ) : null
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor="#7ec14b"
+              colors={["#7ec14b"]}
+            />
           }
-          renderSectionHeader={({ section }) => (
-            <Text style={styles.groupTitle}>{section.title}</Text>
-          )}
-          renderItem={({ item: entry }) => (
-            <View style={styles.blurbWrap}>
+          renderItem={({ item }) => (
+            <View style={styles.itemWrap}>
               <AO3WorkBlurb
-                kind={entry.kind}
-                work={entry.work}
-                bookmark={entry.bookmark}
-                onPressWork={onItemPress ? handlePressWork : undefined}
+                kind="bookmark"
+                bookmark={item}
+                onPressWork={onWorkPress ? () => onWorkPress(item) : undefined}
               />
-
-              {entry.kind === "bookmark" && entry.bookmark ? (
-                <BookmarkOwnerCard
-                  bookmark={entry.bookmark}
-                  isOwnUser={isOwnUser}
-                  removing={removingIds.has(String(entry.bookmark.id))}
-                  onEdit={handleEditBookmark}
-                  onDelete={handleDeleteBookmark}
-                  onAddToCollection={handleAddBookmarkToCollection}
-                  onShare={handleShareBookmark}
-                  onPressBookmarker={onPressBookmarker}
-                />
-              ) : null}
+              <BookmarkOwnerCard
+                bookmark={item}
+                isOwnUser={isOwnUser}
+                removing={removingIds.has(String(item.id))}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                onAddToCollection={handleAddToCollection}
+                onShare={handleShare}
+              />
             </View>
           )}
           initialNumToRender={6}
@@ -839,19 +770,67 @@ const AO3ListingScreen: React.FC<Props> = ({
           removeClippedSubviews
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <Text style={styles.emptyTitle}>No blurbs found</Text>
+              <Text style={styles.emptyTitle}>No bookmarks found</Text>
               <Text style={styles.emptyBody}>
-                The page may not use standard AO3 listing markup, or the extractor may need a new selector.
+                {isOwnUser
+                  ? "Bookmark a work on AO3 and it'll show up here."
+                  : `${username} hasn't made any public bookmarks yet.`}
               </Text>
             </View>
+          }
+          ListFooterComponent={
+            hasPagination ? (
+              <View style={styles.paginationWrap}>
+                <TouchableOpacity
+                  style={[styles.pageArrowBtn, !pagination?.prevHref && styles.pageArrowBtnDisabled]}
+                  onPress={() => goToUrl(pagination?.prevHref)}
+                  disabled={!pagination?.prevHref}
+                >
+                  <Ionicons name="chevron-back" size={16} color={pagination?.prevHref ? "#fff" : "#555"} />
+                </TouchableOpacity>
+
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.pageNumbersRow}
+                >
+                  {numericPages.map((p, idx) =>
+                    p.isGap ? (
+                      <Text key={`gap-${idx}`} style={styles.pageGap}>
+                        …
+                      </Text>
+                    ) : (
+                      <TouchableOpacity
+                        key={`${p.label}-${idx}`}
+                        style={[styles.pageNumBtn, p.isCurrent && styles.pageNumBtnActive]}
+                        onPress={() => !p.isCurrent && goToUrl(p.href)}
+                        disabled={p.isCurrent || !p.href}
+                      >
+                        <Text style={[styles.pageNumText, p.isCurrent && styles.pageNumTextActive]}>
+                          {p.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ),
+                  )}
+                </ScrollView>
+
+                <TouchableOpacity
+                  style={[styles.pageArrowBtn, !pagination?.nextHref && styles.pageArrowBtnDisabled]}
+                  onPress={() => goToUrl(pagination?.nextHref)}
+                  disabled={!pagination?.nextHref}
+                >
+                  <Ionicons name="chevron-forward" size={16} color={pagination?.nextHref ? "#fff" : "#555"} />
+                </TouchableOpacity>
+              </View>
+            ) : undefined
           }
         />
       )}
 
       <HiddenWebView
         ref={webRef}
-        source={sourceHtml ? { html: sourceHtml, baseUrl: url } : { uri: url }}
-        injectedJavaScript={LISTING_INJECTED_JS}
+        source={sourceHtml ? { html: sourceHtml, baseUrl: currentUrl } : { uri: currentUrl }}
+        injectedJavaScript={BOOKMARKS_INJECTED_JS}
         onMessage={handleMessage}
         javaScriptEnabled
         domStorageEnabled
@@ -861,44 +840,27 @@ const AO3ListingScreen: React.FC<Props> = ({
   );
 };
 
+/* ------------------------------------------------------------------ */
+/* Styles                                                               */
+/* ------------------------------------------------------------------ */
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#000",
   },
-  header: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#222",
-    backgroundColor: "#0d0d0d",
-  },
-  headerTitle: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  headerSubtitle: {
-    color: "#9a9a9a",
-    fontSize: 12,
-    marginTop: 4,
-  },
-  viewBookmarksBtn: {
-    flexDirection: "row",
+  backBtn: {
+    position: "absolute",
+    left: 12,
+    zIndex: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    alignSelf: "flex-start",
-    backgroundColor: "#7ec14b",
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginBottom: 16,
-  },
-  viewBookmarksBtnText: {
-    color: "#000",
-    fontSize: 13,
-    fontWeight: "700",
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
   },
   loading: {
     flex: 1,
@@ -914,14 +876,9 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 16,
   },
-  groupTitle: {
-    color: "#7ec14b",
-    fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
-  blurbWrap: {
+  itemWrap: {
     width: "100%",
+    marginBottom: 16,
   },
   emptyState: {
     padding: 24,
@@ -940,6 +897,61 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 18,
   },
+  paginationWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    paddingVertical: 16,
+  },
+  pageArrowBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#151515",
+    borderWidth: 1,
+    borderColor: "#333",
+  },
+  pageArrowBtnDisabled: {
+    opacity: 0.4,
+  },
+  pageNumbersRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 6,
+  },
+  pageNumBtn: {
+    minWidth: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 8,
+    backgroundColor: "#151515",
+    borderWidth: 1,
+    borderColor: "#333",
+  },
+  pageNumBtnActive: {
+    backgroundColor: "#7ec14b",
+    borderColor: "#7ec14b",
+  },
+  pageNumText: {
+    color: "#ccc",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  pageNumTextActive: {
+    color: "#000",
+  },
+  pageGap: {
+    color: "#777",
+    fontSize: 13,
+    paddingHorizontal: 4,
+    alignSelf: "center",
+  },
 });
 
-export default AO3ListingScreen;
+export default AO3BookmarksScreen;

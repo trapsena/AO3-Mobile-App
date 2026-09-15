@@ -80,6 +80,16 @@ export interface AO3BookmarkMeta {
   href?: string;
 }
 
+// The "Edit" / "Delete" / "Add to Collection" / "Share" links AO3 renders
+// inside a bookmark's `.own.user.module.group` — only present server-side
+// when the page is being viewed by the person who made that bookmark.
+export interface AO3BookmarkOwnActions {
+  editHref?: string;
+  deleteHref?: string;
+  addToCollectionHref?: string;
+  shareHref?: string;
+}
+
 export interface AO3BookmarkData {
   id: string | number;
   title: string;
@@ -98,6 +108,12 @@ export interface AO3BookmarkData {
   fandoms?: AO3Link[];
   stats?: AO3WorkStats;
   extraBadges?: string[];
+  // Whether AO3's own markup marked this bookmark's module as "own" (i.e.
+  // `ownActions` below was actually rendered server-side). Screens should
+  // still gate showing those actions on comparing the logged-in session's
+  // username against whose bookmarks page this is, rather than this alone.
+  isOwnModule?: boolean;
+  ownActions?: AO3BookmarkOwnActions;
 }
 
 interface Props {
