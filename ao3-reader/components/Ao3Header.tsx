@@ -55,6 +55,10 @@ export interface HistoryHeaderInfo {
 export interface BookmarksHeaderInfo {
   title: string;
   onGoBack: () => void;
+  // Opens or closes the filter/sort panel the screen owns (facets scraped
+  // from the currently loaded page) — see AO3FilterPanel. Tapping the
+  // header's filter button again while the panel is already open closes it.
+  onToggleFilters: () => void;
 }
 
 // Published by AO3WorksScreen (via onHeaderActionsChange) while the Works
@@ -64,6 +68,7 @@ export interface BookmarksHeaderInfo {
 export interface WorksHeaderInfo {
   title: string;
   onGoBack: () => void;
+  onToggleFilters: () => void;
 }
 
 // Published by AO3ListingScreen (via onHeaderActionsChange) while it's being
@@ -436,14 +441,26 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
             <Text style={styles.headerTitle} numberOfLines={1}>
               {bookmarksHeaderInfo.title || "Bookmarks"}
             </Text>
-            <View style={styles.avatarBtn} />
+            <TouchableOpacity
+              onPress={bookmarksHeaderInfo.onToggleFilters}
+              style={styles.avatarBtn}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="options-outline" size={22} color="#fff" />
+            </TouchableOpacity>
           </>
         ) : activeTab === "works" && worksHeaderInfo ? (
           <>
             <Text style={styles.headerTitle} numberOfLines={1}>
               {worksHeaderInfo.title || "Works"}
             </Text>
-            <View style={styles.avatarBtn} />
+            <TouchableOpacity
+              onPress={worksHeaderInfo.onToggleFilters}
+              style={styles.avatarBtn}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="options-outline" size={22} color="#fff" />
+            </TouchableOpacity>
           </>
         ) : activeTab === "profile" && profileHeaderInfo ? (
           <>

@@ -14,8 +14,14 @@ import {
 import { WebView, WebViewMessageEvent } from "react-native-webview";
 import { Ionicons } from "@expo/vector-icons";
 import { fetchWithSession } from "../api/ao3Auth";
+import { AO3_FILTER_EXTRACTION_JS } from "../api/ao3FilterExtractionJs";
+import { AO3FilterFacets, AO3FilterSelection, EMPTY_AO3_FILTER_SELECTION } from "../api/ao3FilterTypes";
+import { buildFilterQueryString, deriveSelectionFromFacets } from "../api/ao3FilterQuery";
 import AO3WorkBlurb, { AO3WorkBlurbData, AO3Link } from "../components/AO3WorkBlurb";
+import AO3FilterPanel from "../components/AO3FilterPanel";
 import type { WorksHeaderInfo } from "../components/Ao3Header";
+
+const EMPTY_WORKS_FACETS: AO3FilterFacets = { kind: "works", sortOptions: [] };
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -309,6 +315,8 @@ const WORKS_INJECTED_JS = `
     };
   }
 
+  ${AO3_FILTER_EXTRACTION_JS}
+
   function parseWork(root) {
     var titleLink = firstMatch(root, ["h4.heading a", ".header h4 a", "a[href*='/works/']"]);
     var authorLink = root.querySelector("a[rel='author']");
@@ -419,6 +427,7 @@ const WORKS_INJECTED_JS = `
         listHeading: headingEl ? text(headingEl) : "",
         items: collectItems(),
         pagination: collectPagination(),
+        filters: collectAO3Filters("works"),
       }));
     } catch (err) {
       window.ReactNativeWebView.postMessage(JSON.stringify({
@@ -456,6 +465,14 @@ const AO3WorksScreen: React.FC<Props> = ({
   const [items, setItems] = useState<AO3WorkBlurbData[]>([]);
   const [pagination, setPagination] = useState<AO3Pagination | null>(null);
   const [sourceHtml, setSourceHtml] = useState<string | null>(null);
+  const [facets, setFacets] = useState<AO3FilterFacets>(EMPTY_WORKS_FACETS);
+  const [filterSelection, setFilterSelection] = useState<AO3FilterSelection>(EMPTY_AO3_FILTER_SELECTION);
+  const [filterPanelVisible, setFilterPanelVisible] = useState(false);
+  // Seeds `filterSelection` from whatever the very first page load already
+  // has checked/selected (see deriveSelectionFromFacets) exactly once — a
+  // reload after applying filters shouldn't stomp on further in-progress
+  // edits the person hasn't applied yet.
+  const facetsSeededRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -509,6 +526,14 @@ const AO3WorksScreen: React.FC<Props> = ({
         const nextItems = Array.isArray(payload.items) ? payload.items.map((entry: any) => entry.work) : [];
         setItems(nextItems);
         setPagination(payload.pagination || null);
+        if (payload.filters) {
+          const nextFacets: AO3FilterFacets = payload.filters;
+          setFacets(nextFacets);
+          if (!facetsSeededRef.current) {
+            facetsSeededRef.current = true;
+            setFilterSelection(deriveSelectionFromFacets(nextFacets));
+          }
+        }
       } else if (payload.type === "worksError") {
         console.warn("[AO3WorksScreen] Works extraction failed:", payload.error);
       }
@@ -520,12 +545,36 @@ const AO3WorksScreen: React.FC<Props> = ({
     }
   };
 
+  // AO3's own "Sort and Filter" form posts to the generic /works endpoint
+  // (scoped back to this user via the user_id hidden field it carries) —
+  // not the nested /users/:id/works route this screen normally reads from
+  // — so filtered navigation mirrors that real form submission exactly.
+  const handleApplyFilters = useCallback(() => {
+    const queryString = buildFilterQueryString("works", filterSelection, {
+      commit: "Sort and Filter",
+      user_id: username,
+    });
+    goToUrl(`https://archiveofourown.org/works?${queryString}`);
+  }, [filterSelection, username, goToUrl]);
+
+  const handleClearFilters = useCallback(() => {
+    setFilterSelection(EMPTY_AO3_FILTER_SELECTION);
+    facetsSeededRef.current = false;
+    goToUrl(worksBaseUrl(username));
+  }, [username, goToUrl]);
+
+  // Tapping the header's filter button again while the panel is already
+  // open closes it, the same as tapping the backdrop or the panel's own
+  // close button would.
+  const handleToggleFilters = useCallback(() => setFilterPanelVisible((prev) => !prev), []);
+
   useEffect(() => {
     onHeaderActionsChange?.({
       title: pageTitle || title || `${username}'s Works`,
       onGoBack: () => onClose?.(),
+      onToggleFilters: handleToggleFilters,
     });
-  }, [pageTitle, title, username, onClose, onHeaderActionsChange]);
+  }, [pageTitle, title, username, onClose, onHeaderActionsChange, handleToggleFilters]);
 
   // Separate from the effect above so the "clear on unmount" cleanup doesn't
   // also fire (and briefly flicker the header) on every title update — this
@@ -655,6 +704,17 @@ const AO3WorksScreen: React.FC<Props> = ({
         javaScriptEnabled
         domStorageEnabled
         mixedContentMode="always"
+      />
+
+      <AO3FilterPanel
+        visible={filterPanelVisible}
+        onClose={() => setFilterPanelVisible(false)}
+        kind="works"
+        facets={facets}
+        value={filterSelection}
+        onChange={setFilterSelection}
+        onApply={handleApplyFilters}
+        onClear={handleClearFilters}
       />
     </View>
   );

@@ -17,9 +17,15 @@ import { WebView, WebViewMessageEvent } from "react-native-webview";
 import { Ionicons } from "@expo/vector-icons";
 import { fetchWithSession } from "../api/ao3Auth";
 import { extractCsrfToken, deleteAo3Bookmark } from "../api/ao3Bookmarks";
+import { AO3_FILTER_EXTRACTION_JS } from "../api/ao3FilterExtractionJs";
+import { AO3FilterFacets, AO3FilterSelection, EMPTY_AO3_FILTER_SELECTION } from "../api/ao3FilterTypes";
+import { buildFilterQueryString, deriveSelectionFromFacets } from "../api/ao3FilterQuery";
 import AO3WorkBlurb, { AO3BookmarkData, AO3Link } from "../components/AO3WorkBlurb";
 import BookmarkOwnerCard from "../components/BookmarkOwnerCard";
+import AO3FilterPanel from "../components/AO3FilterPanel";
 import type { BookmarksHeaderInfo } from "../components/Ao3Header";
+
+const EMPTY_BOOKMARKS_FACETS: AO3FilterFacets = { kind: "bookmarks", sortOptions: [] };
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -309,6 +315,8 @@ const BOOKMARKS_INJECTED_JS = `
     return ps.length ? ps.join("\\n\\n") : text(el);
   }
 
+  ${AO3_FILTER_EXTRACTION_JS}
+
   function parseOwnActions(ownModule) {
     if (!ownModule) return undefined;
     var actionsList = ownModule.querySelector("ul.actions");
@@ -499,6 +507,7 @@ const BOOKMARKS_INJECTED_JS = `
         items: collectBookmarks(),
         pagination: collectPagination(),
         csrfToken: csrfMeta ? csrfMeta.getAttribute("content") : null,
+        filters: collectAO3Filters("bookmarks"),
       }));
     } catch (err) {
       window.ReactNativeWebView.postMessage(JSON.stringify({
@@ -539,6 +548,13 @@ const AO3BookmarksScreen: React.FC<Props> = ({
   const [sourceHtml, setSourceHtml] = useState<string | null>(null);
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
+  const [facets, setFacets] = useState<AO3FilterFacets>(EMPTY_BOOKMARKS_FACETS);
+  const [filterSelection, setFilterSelection] = useState<AO3FilterSelection>(EMPTY_AO3_FILTER_SELECTION);
+  const [filterPanelVisible, setFilterPanelVisible] = useState(false);
+  // Seeds `filterSelection` from whatever the very first page load already
+  // has checked/selected exactly once — a reload after applying filters
+  // shouldn't stomp on further in-progress edits not yet applied.
+  const facetsSeededRef = useRef(false);
 
   const isOwnUser =
     !!currentUsername && currentUsername.trim().toLowerCase() === username.trim().toLowerCase();
@@ -595,6 +611,14 @@ const AO3BookmarksScreen: React.FC<Props> = ({
         setItems(Array.isArray(payload.items) ? payload.items : []);
         setPagination(payload.pagination || null);
         if (payload.csrfToken) setCsrfToken(payload.csrfToken);
+        if (payload.filters) {
+          const nextFacets: AO3FilterFacets = payload.filters;
+          setFacets(nextFacets);
+          if (!facetsSeededRef.current) {
+            facetsSeededRef.current = true;
+            setFilterSelection(deriveSelectionFromFacets(nextFacets));
+          }
+        }
       } else if (payload.type === "bookmarksError") {
         console.warn("[AO3BookmarksScreen] Bookmarks extraction failed:", payload.error);
       }
@@ -685,12 +709,37 @@ const AO3BookmarksScreen: React.FC<Props> = ({
     [csrfToken, currentUrl],
   );
 
+  // AO3's own "Sort and Filter" form posts to the generic /bookmarks
+  // endpoint (scoped back to this user via the user_id hidden field it
+  // carries) — not the nested /users/:id/bookmarks route this screen
+  // normally reads from — so filtered navigation mirrors that real form
+  // submission exactly.
+  const handleApplyFilters = useCallback(() => {
+    const queryString = buildFilterQueryString("bookmarks", filterSelection, {
+      commit: "Sort and Filter",
+      user_id: username,
+    });
+    goToUrl(`https://archiveofourown.org/bookmarks?${queryString}`);
+  }, [filterSelection, username, goToUrl]);
+
+  const handleClearFilters = useCallback(() => {
+    setFilterSelection(EMPTY_AO3_FILTER_SELECTION);
+    facetsSeededRef.current = false;
+    goToUrl(bookmarksBaseUrl(username));
+  }, [username, goToUrl]);
+
+  // Tapping the header's filter button again while the panel is already
+  // open closes it, the same as tapping the backdrop or the panel's own
+  // close button would.
+  const handleToggleFilters = useCallback(() => setFilterPanelVisible((prev) => !prev), []);
+
   useEffect(() => {
     onHeaderActionsChange?.({
       title: pageTitle || title || `${username}'s Bookmarks`,
       onGoBack: () => onClose?.(),
+      onToggleFilters: handleToggleFilters,
     });
-  }, [pageTitle, title, username, onClose, onHeaderActionsChange]);
+  }, [pageTitle, title, username, onClose, onHeaderActionsChange, handleToggleFilters]);
 
   // Separate from the effect above so the "clear on unmount" cleanup doesn't
   // also fire (and briefly flicker the header) on every title update — this
@@ -833,6 +882,17 @@ const AO3BookmarksScreen: React.FC<Props> = ({
         javaScriptEnabled
         domStorageEnabled
         mixedContentMode="always"
+      />
+
+      <AO3FilterPanel
+        visible={filterPanelVisible}
+        onClose={() => setFilterPanelVisible(false)}
+        kind="bookmarks"
+        facets={facets}
+        value={filterSelection}
+        onChange={setFilterSelection}
+        onApply={handleApplyFilters}
+        onClear={handleClearFilters}
       />
     </View>
   );
