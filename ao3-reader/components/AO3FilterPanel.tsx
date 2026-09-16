@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Dimensions,
@@ -53,6 +53,23 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const [expanded, setExpanded] = useState<Partial<Record<AO3FacetTagType, boolean>>>({});
 
+  // AO3's own character/relationship/freeform facets can run into the
+  // hundreds for a popular fandom, each rendered as its own chip below.
+  // `value` gets a new object identity on every single edit (the parent
+  // screen re-creates the selection each time), so if the mutation
+  // handlers closed over it directly, their identity would change on every
+  // render too — and since those handlers are passed as props into the
+  // memoized chips, that alone would force every single chip to re-render
+  // on every tap or keystroke, regardless of whether that chip's own state
+  // actually changed. That fan-out (one edit -> hundreds of re-renders) is
+  // what caused the multi-second input lag. Reading through a ref instead
+  // keeps these handlers permanently stable, so React.memo below can
+  // actually do its job and skip the chips that didn't change.
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
   useEffect(() => {
     Animated.parallel([
       Animated.timing(translateX, { toValue: visible ? 0 : PANEL_WIDTH, duration: 260, useNativeDriver: true }),
@@ -71,34 +88,46 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
     return undefined;
   };
 
-  const cycleTriState = (tagType: AO3FacetTagType, id: string) => {
-    const current = triStateFor(tagType, id);
+  const cycleTriState = useCallback((tagType: AO3FacetTagType, id: string) => {
+    const current = valueRef.current;
+    const currentState: TriState = current.includeTagIds?.[tagType]?.includes(id)
+      ? "include"
+      : current.excludeTagIds?.[tagType]?.includes(id)
+        ? "exclude"
+        : undefined;
     const withoutId = (ids?: string[]) => (ids || []).filter((existing) => existing !== id);
 
-    const nextInclude = { ...value.includeTagIds };
-    const nextExclude = { ...value.excludeTagIds };
+    const nextInclude = { ...current.includeTagIds };
+    const nextExclude = { ...current.excludeTagIds };
     nextInclude[tagType] = withoutId(nextInclude[tagType]);
     nextExclude[tagType] = withoutId(nextExclude[tagType]);
 
-    if (current === undefined) {
+    if (currentState === undefined) {
       nextInclude[tagType] = [...(nextInclude[tagType] || []), id];
-    } else if (current === "include") {
+    } else if (currentState === "include") {
       nextExclude[tagType] = [...(nextExclude[tagType] || []), id];
     }
-    // current === "exclude" -> falls through to fully cleared (already removed above)
+    // currentState === "exclude" -> falls through to fully cleared (already removed above)
 
-    onChange({ ...value, includeTagIds: nextInclude, excludeTagIds: nextExclude });
-  };
+    onChangeRef.current({ ...current, includeTagIds: nextInclude, excludeTagIds: nextExclude });
+  }, []);
 
-  const toggleCollectionId = (id: string) => {
-    const current = value.collectionIds || [];
-    const next = current.includes(id) ? current.filter((existing) => existing !== id) : [...current, id];
-    onChange({ ...value, collectionIds: next });
-  };
+  const toggleCollectionId = useCallback((id: string) => {
+    const current = valueRef.current;
+    const currentIds = current.collectionIds || [];
+    const next = currentIds.includes(id) ? currentIds.filter((existing) => existing !== id) : [...currentIds, id];
+    onChangeRef.current({ ...current, collectionIds: next });
+  }, []);
 
-  const set = <K extends keyof AO3FilterSelection>(key: K, val: AO3FilterSelection[K]) => {
-    onChange({ ...value, [key]: val });
-  };
+  const set = useCallback(<K extends keyof AO3FilterSelection>(key: K, val: AO3FilterSelection[K]) => {
+    onChangeRef.current({ ...valueRef.current, [key]: val });
+  }, []);
+
+  const setSortColumn = useCallback((v: string) => set("sortColumn", v), [set]);
+  const setCrossover = useCallback((v: string) => set("crossover", v as AO3FilterSelection["crossover"]), [set]);
+  const setComplete = useCallback((v: string) => set("complete", v as AO3FilterSelection["complete"]), [set]);
+  const toggleRecOnly = useCallback(() => set("recOnly", !valueRef.current.recOnly), [set]);
+  const toggleWithNotesOnly = useCallback(() => set("withNotesOnly", !valueRef.current.withNotesOnly), [set]);
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents={visible ? "auto" : "none"}>
@@ -122,9 +151,10 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
                 {facets.sortOptions.map((opt) => (
                   <Chip
                     key={opt.value}
+                    value={opt.value}
                     label={opt.label}
                     active={value.sortColumn ? value.sortColumn === opt.value : !!opt.selected}
-                    onPress={() => set("sortColumn", opt.value)}
+                    onSelect={setSortColumn}
                   />
                 ))}
               </View>
@@ -139,7 +169,7 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
                   key={c.id}
                   option={c}
                   checked={(value.collectionIds || []).includes(c.id)}
-                  onPress={() => toggleCollectionId(c.id)}
+                  onToggle={toggleCollectionId}
                 />
               ))}
             </Section>
@@ -162,17 +192,15 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
                     </TouchableOpacity>
                     {isOpen ? (
                       <View style={styles.chipRow}>
-                        {options.map((opt) => {
-                          const state = triStateFor(tagType, opt.id);
-                          return (
-                            <TriStateChip
-                              key={opt.id}
-                              option={opt}
-                              state={state}
-                              onPress={() => cycleTriState(tagType, opt.id)}
-                            />
-                          );
-                        })}
+                        {options.map((opt) => (
+                          <TriStateChip
+                            key={opt.id}
+                            option={opt}
+                            tagType={tagType}
+                            state={triStateFor(tagType, opt.id)}
+                            onToggle={cycleTriState}
+                          />
+                        ))}
                       </View>
                     ) : null}
                   </View>
@@ -232,18 +260,18 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
           {kind === "works" ? (
             <Section title="Crossovers">
               <View style={styles.chipRow}>
-                <Chip label="Include" active={value.crossover === ""} onPress={() => set("crossover", "")} />
-                <Chip label="Exclude" active={value.crossover === "F"} onPress={() => set("crossover", "F")} />
-                <Chip label="Only" active={value.crossover === "T"} onPress={() => set("crossover", "T")} />
+                <Chip value="" label="Include" active={value.crossover === ""} onSelect={setCrossover} />
+                <Chip value="F" label="Exclude" active={value.crossover === "F"} onSelect={setCrossover} />
+                <Chip value="T" label="Only" active={value.crossover === "T"} onSelect={setCrossover} />
               </View>
             </Section>
           ) : null}
           {kind === "works" ? (
             <Section title="Completion Status">
               <View style={styles.chipRow}>
-                <Chip label="All" active={value.complete === ""} onPress={() => set("complete", "")} />
-                <Chip label="Complete" active={value.complete === "T"} onPress={() => set("complete", "T")} />
-                <Chip label="WIP" active={value.complete === "F"} onPress={() => set("complete", "F")} />
+                <Chip value="" label="All" active={value.complete === ""} onSelect={setComplete} />
+                <Chip value="T" label="Complete" active={value.complete === "T"} onSelect={setComplete} />
+                <Chip value="F" label="WIP" active={value.complete === "F"} onSelect={setComplete} />
               </View>
             </Section>
           ) : null}
@@ -321,11 +349,11 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
           {/* Bookmark types — bookmarks only */}
           {kind === "bookmarks" ? (
             <Section title="Bookmark Types">
-              <ToggleRow label="Recs only" value={!!value.recOnly} onToggle={() => set("recOnly", !value.recOnly)} />
+              <ToggleRow label="Recs only" value={!!value.recOnly} onToggle={toggleRecOnly} />
               <ToggleRow
                 label="Only bookmarks with notes"
                 value={!!value.withNotesOnly}
-                onToggle={() => set("withNotesOnly", !value.withNotesOnly)}
+                onToggle={toggleWithNotesOnly}
               />
             </Section>
           ) : null}
@@ -361,55 +389,72 @@ const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title
   </View>
 );
 
-const Chip: React.FC<{ label: string; active?: boolean; onPress: () => void }> = ({ label, active, onPress }) => (
-  <TouchableOpacity style={[styles.chip, active && styles.chipActive]} onPress={onPress}>
-    <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
-  </TouchableOpacity>
-);
+// Memoized, with the per-item onPress built INSIDE the component from a
+// stable onSelect + this item's own (unchanging) value — so a tap only ever
+// causes the tapped chip and whichever chip was previously active to
+// re-render, not every chip in the row.
+const Chip: React.FC<{ label: string; value: string; active?: boolean; onSelect: (value: string) => void }> =
+  React.memo(({ label, value, active, onSelect }) => {
+    const handlePress = useCallback(() => onSelect(value), [onSelect, value]);
+    return (
+      <TouchableOpacity style={[styles.chip, active && styles.chipActive]} onPress={handlePress}>
+        <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
+      </TouchableOpacity>
+    );
+  });
 
-const TriStateChip: React.FC<{ option: AO3FilterFacetOption; state: TriState; onPress: () => void }> = ({
-  option,
-  state,
-  onPress,
-}) => (
-  <TouchableOpacity
-    style={[styles.chip, state === "include" && styles.chipInclude, state === "exclude" && styles.chipExclude]}
-    onPress={onPress}
-  >
-    {state === "include" ? <Ionicons name="add" size={13} color="#000" style={styles.chipIcon} /> : null}
-    {state === "exclude" ? <Ionicons name="remove" size={13} color="#fff" style={styles.chipIcon} /> : null}
-    <Text
-      style={[
-        styles.chipText,
-        state === "include" && styles.chipTextInclude,
-        state === "exclude" && styles.chipTextExclude,
-      ]}
+const TriStateChip: React.FC<{
+  option: AO3FilterFacetOption;
+  tagType: AO3FacetTagType;
+  state: TriState;
+  onToggle: (tagType: AO3FacetTagType, id: string) => void;
+}> = React.memo(({ option, tagType, state, onToggle }) => {
+  const handlePress = useCallback(() => onToggle(tagType, option.id), [onToggle, tagType, option.id]);
+  return (
+    <TouchableOpacity
+      style={[styles.chip, state === "include" && styles.chipInclude, state === "exclude" && styles.chipExclude]}
+      onPress={handlePress}
     >
-      {option.name}
-      {option.count !== undefined ? ` (${option.count})` : ""}
-    </Text>
-  </TouchableOpacity>
-);
+      {state === "include" ? <Ionicons name="add" size={13} color="#000" style={styles.chipIcon} /> : null}
+      {state === "exclude" ? <Ionicons name="remove" size={13} color="#fff" style={styles.chipIcon} /> : null}
+      <Text
+        style={[
+          styles.chipText,
+          state === "include" && styles.chipTextInclude,
+          state === "exclude" && styles.chipTextExclude,
+        ]}
+      >
+        {option.name}
+        {option.count !== undefined ? ` (${option.count})` : ""}
+      </Text>
+    </TouchableOpacity>
+  );
+});
 
-const FacetCheckboxRow: React.FC<{ option: AO3FilterFacetOption; checked: boolean; onPress: () => void }> = ({
-  option,
-  checked,
-  onPress,
-}) => (
-  <TouchableOpacity style={styles.checkboxRow} onPress={onPress}>
-    <Ionicons name={checked ? "checkbox" : "square-outline"} size={20} color={checked ? "#7ec14b" : "#666"} />
-    <Text style={styles.checkboxLabel}>
-      {option.name}
-      {option.count !== undefined ? ` (${option.count})` : ""}
-    </Text>
-  </TouchableOpacity>
-);
+const FacetCheckboxRow: React.FC<{
+  option: AO3FilterFacetOption;
+  checked: boolean;
+  onToggle: (id: string) => void;
+}> = React.memo(({ option, checked, onToggle }) => {
+  const handlePress = useCallback(() => onToggle(option.id), [onToggle, option.id]);
+  return (
+    <TouchableOpacity style={styles.checkboxRow} onPress={handlePress}>
+      <Ionicons name={checked ? "checkbox" : "square-outline"} size={20} color={checked ? "#7ec14b" : "#666"} />
+      <Text style={styles.checkboxLabel}>
+        {option.name}
+        {option.count !== undefined ? ` (${option.count})` : ""}
+      </Text>
+    </TouchableOpacity>
+  );
+});
 
-const ToggleRow: React.FC<{ label: string; value: boolean; onToggle: () => void }> = ({ label, value, onToggle }) => (
-  <TouchableOpacity style={styles.checkboxRow} onPress={onToggle}>
-    <Ionicons name={value ? "checkbox" : "square-outline"} size={20} color={value ? "#7ec14b" : "#666"} />
-    <Text style={styles.checkboxLabel}>{label}</Text>
-  </TouchableOpacity>
+const ToggleRow: React.FC<{ label: string; value: boolean; onToggle: () => void }> = React.memo(
+  ({ label, value, onToggle }) => (
+    <TouchableOpacity style={styles.checkboxRow} onPress={onToggle}>
+      <Ionicons name={value ? "checkbox" : "square-outline"} size={20} color={value ? "#7ec14b" : "#666"} />
+      <Text style={styles.checkboxLabel}>{label}</Text>
+    </TouchableOpacity>
+  ),
 );
 
 /* ------------------------------------------------------------------ */
