@@ -593,6 +593,44 @@ const AO3WorksScreen: React.FC<Props> = ({
   const hasPagination =
     !!pagination && (!!pagination.prevHref || !!pagination.nextHref || numericPages.length > 1);
 
+  // Toggling the filter panel only changes local `filterPanelVisible` state,
+  // but that still re-renders this whole screen — and FlatList treats a
+  // fresh `renderItem`/`contentContainerStyle`/`keyExtractor` reference as
+  // "everything changed", re-rendering every visible work card just to show
+  // the panel sliding in. Keeping these stable (only changing when the
+  // values they actually depend on change) is what actually fixes the lag;
+  // the panel opening itself is cheap.
+  const keyExtractor = useCallback((item: AO3WorkBlurbData, index: number) => String(item.id) || String(index), []);
+
+  const contentContainerStyle = useMemo(
+    () => [styles.listContent, { paddingTop: styles.listContent.padding + (contentContainerTopPadding || 0) }],
+    [contentContainerTopPadding],
+  );
+
+  const renderItem = useCallback(
+    ({ item }: { item: AO3WorkBlurbData }) => (
+      <View style={styles.itemWrap}>
+        <AO3WorkBlurb
+          kind="work"
+          work={item}
+          onPressWork={onWorkPress ? () => onWorkPress(item) : undefined}
+          onPressAuthor={onPressAuthor}
+        />
+      </View>
+    ),
+    [onWorkPress, onPressAuthor],
+  );
+
+  const listEmptyComponent = useMemo(
+    () => (
+      <View style={styles.emptyState}>
+        <Text style={styles.emptyTitle}>No works found</Text>
+        <Text style={styles.emptyBody}>{`${username} hasn't posted any works yet.`}</Text>
+      </View>
+    ),
+    [username],
+  );
+
   return (
     // No paddingTop here: this box must stay full-screen (a background
     // layer) so the FlatList underneath can scroll its content behind the
@@ -607,16 +645,13 @@ const AO3WorksScreen: React.FC<Props> = ({
         <Animated.FlatList
           ref={listRef}
           data={items}
-          keyExtractor={(item, index) => String(item.id) || String(index)}
+          keyExtractor={keyExtractor}
           // The header-height reserve lives here, on the scrollable content
           // itself, not on the outer View — so the list's own box still
           // spans the full screen and can be scrolled/pulled up underneath
           // the header with no gap, while the first rendered card still
           // starts safely below it.
-          contentContainerStyle={[
-            styles.listContent,
-            { paddingTop: styles.listContent.padding + (contentContainerTopPadding || 0) },
-          ]}
+          contentContainerStyle={contentContainerStyle}
           onScroll={onScroll}
           scrollEventThrottle={16}
           refreshControl={
@@ -627,26 +662,12 @@ const AO3WorksScreen: React.FC<Props> = ({
               colors={["#7ec14b"]}
             />
           }
-          renderItem={({ item }) => (
-            <View style={styles.itemWrap}>
-              <AO3WorkBlurb
-                kind="work"
-                work={item}
-                onPressWork={onWorkPress ? () => onWorkPress(item) : undefined}
-                onPressAuthor={onPressAuthor}
-              />
-            </View>
-          )}
+          renderItem={renderItem}
           initialNumToRender={6}
           maxToRenderPerBatch={6}
           windowSize={7}
           removeClippedSubviews
-          ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyTitle}>No works found</Text>
-              <Text style={styles.emptyBody}>{`${username} hasn't posted any works yet.`}</Text>
-            </View>
-          }
+          ListEmptyComponent={listEmptyComponent}
           ListFooterComponent={
             hasPagination ? (
               <View style={styles.paginationWrap}>

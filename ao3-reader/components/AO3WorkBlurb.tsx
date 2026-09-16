@@ -893,4 +893,10 @@ const styles = StyleSheet.create({
   },
 });
 
-export default AO3WorkBlurb;
+// Memoized since this does a fair amount of work per card (sprite/symbol
+// lookups, tag-list building, stats formatting) and is rendered as a
+// FlatList/SectionList row — skipping re-renders when a card's own props
+// haven't changed matters for keeping unrelated state changes elsewhere on
+// the screen (like toggling the filter panel) from re-rendering every
+// visible card.
+export default React.memo(AO3WorkBlurb);

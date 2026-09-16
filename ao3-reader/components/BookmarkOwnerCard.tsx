@@ -198,4 +198,6 @@ const styles = StyleSheet.create({
   },
 });
 
-export default BookmarkOwnerCard;
+// Memoized for the same reason as AO3WorkBlurb — a FlatList row shouldn't
+// re-render just because unrelated state elsewhere on the screen changed.
+export default React.memo(BookmarkOwnerCard);
