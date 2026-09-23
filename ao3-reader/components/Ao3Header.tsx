@@ -124,6 +124,7 @@ const NAV_ITEMS: { key: Ao3Tab; label: string; icon: keyof typeof Ionicons.glyph
   { key: "reader", label: "Reader", icon: "book" },
   { key: "history", label: "History", icon: "documents-outline" },
   { key: "inbox", label: "Inbox", icon: "mail-outline" },
+  { key: "bookmarks", label: "Bookmarks", icon: "bookmark-outline" },
 ];
 
 const Ao3Header: React.FC<Ao3HeaderProps> = ({

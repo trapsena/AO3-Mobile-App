@@ -137,13 +137,21 @@ const AppContent: React.FC = () => {
     setActiveTab("works");
   };
 
-  // Drawer nav items (Home/Reader/History) are top-level destinations reached
-  // via the menu rather than by drilling into content — treated as a fresh
-  // start, so they reset the back stack instead of adding to it.
-  const navigateFromDrawer = useCallback((tab: Ao3Tab) => {
-    navHistoryRef.current = [];
-    setActiveTab(tab);
-  }, []);
+  // Drawer nav items (Home/Reader/History/Inbox/Bookmarks) are top-level
+  // destinations reached via the menu rather than by drilling into content —
+  // treated as a fresh start, so they reset the back stack instead of adding
+  // to it. Bookmarks is otherwise a per-user screen (reached from anyone's
+  // profile via openBookmarks) rather than a tab with a single fixed owner
+  // like History, so the drawer item explicitly points it at your own
+  // bookmarks — the same "yourself" default History always uses.
+  const navigateFromDrawer = useCallback(
+    (tab: Ao3Tab) => {
+      navHistoryRef.current = [];
+      if (tab === "bookmarks") setBookmarksUsername(username);
+      setActiveTab(tab);
+    },
+    [username],
+  );
 
   // Shared back-button handler for History/Bookmarks/Reader/Profile's
   // onClose — pops the back stack and restores whatever screen (and
