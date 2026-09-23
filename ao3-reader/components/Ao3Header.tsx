@@ -17,7 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getUserIconUrl } from "../api/ao3Auth";
 
-export type Ao3Tab = "home" | "reader" | "history" | "bookmarks" | "profile" | "works";
+export type Ao3Tab = "home" | "reader" | "history" | "inbox" | "bookmarks" | "profile" | "works";
 
 // Published by FanficReader (via onHeaderActionsChange) while the Reader tab
 // is active, so Ao3Header can render the fic/chapter title and the
@@ -46,6 +46,15 @@ export interface HistoryHeaderInfo {
   onSelectSubTab: (tab: "history" | "to-read") => void;
   onClearHistory: () => void;
   onGoBack: () => void;
+}
+
+// Published by AO3InboxScreen (via onHeaderActionsChange) while the Inbox tab
+// is active — a persistent drawer tab like History, so its back button works
+// the same way, plus a toggle for the inbox's own filter panel.
+export interface InboxHeaderInfo {
+  title: string;
+  onGoBack: () => void;
+  onToggleFilters: () => void;
 }
 
 // Published by AO3BookmarksScreen (via onHeaderActionsChange) while the
@@ -99,9 +108,10 @@ interface Ao3HeaderProps {
   // header derives its own hide/show offset from this via diffClamp, so the
   // screen only has to forward its ScrollView/FlatList's onScroll here.
   scrollY: Animated.Value;
-  // Only rendered when activeTab === "reader" / "history" / "bookmarks" / "profile" / "works" respectively.
+  // Only rendered when activeTab === "reader" / "history" / "inbox" / "bookmarks" / "profile" / "works" respectively.
   readerHeaderInfo?: ReaderHeaderInfo | null;
   historyHeaderInfo?: HistoryHeaderInfo | null;
+  inboxHeaderInfo?: InboxHeaderInfo | null;
   bookmarksHeaderInfo?: BookmarksHeaderInfo | null;
   profileHeaderInfo?: ProfileHeaderInfo | null;
   worksHeaderInfo?: WorksHeaderInfo | null;
@@ -113,6 +123,7 @@ const NAV_ITEMS: { key: Ao3Tab; label: string; icon: keyof typeof Ionicons.glyph
   { key: "home", label: "Home", icon: "home" },
   { key: "reader", label: "Reader", icon: "book" },
   { key: "history", label: "History", icon: "documents-outline" },
+  { key: "inbox", label: "Inbox", icon: "mail-outline" },
 ];
 
 const Ao3Header: React.FC<Ao3HeaderProps> = ({
@@ -124,6 +135,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
   scrollY,
   readerHeaderInfo,
   historyHeaderInfo,
+  inboxHeaderInfo,
   bookmarksHeaderInfo,
   profileHeaderInfo,
   worksHeaderInfo,
@@ -211,6 +223,8 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
       readerHeaderInfo.onGoBack();
     } else if (activeTab === "history" && historyHeaderInfo?.onGoBack) {
       historyHeaderInfo.onGoBack();
+    } else if (activeTab === "inbox" && inboxHeaderInfo?.onGoBack) {
+      inboxHeaderInfo.onGoBack();
     } else if (activeTab === "bookmarks" && bookmarksHeaderInfo?.onGoBack) {
       bookmarksHeaderInfo.onGoBack();
     } else if (activeTab === "profile" && profileHeaderInfo?.onGoBack) {
@@ -434,6 +448,19 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
             </View>
             <TouchableOpacity onPress={historyHeaderInfo.onClearHistory} style={styles.actionBtn}>
               <Ionicons name="trash-outline" size={20} color="#f66" />
+            </TouchableOpacity>
+          </>
+        ) : activeTab === "inbox" && inboxHeaderInfo ? (
+          <>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {inboxHeaderInfo.title || "Inbox"}
+            </Text>
+            <TouchableOpacity
+              onPress={inboxHeaderInfo.onToggleFilters}
+              style={styles.avatarBtn}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="options-outline" size={22} color="#fff" />
             </TouchableOpacity>
           </>
         ) : activeTab === "bookmarks" && bookmarksHeaderInfo ? (

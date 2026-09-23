@@ -5,6 +5,7 @@ import FanficReader from "./screens/FanficReader";
 import LoginScreen from "./screens/LoginScreen";
 import HomeScreen from "./screens/HomeScreen";
 import AO3HistoryScreen from "./screens/AO3HistoryScreen";
+import AO3InboxScreen from "./screens/AO3InboxScreen";
 import AO3BookmarksScreen from "./screens/AO3BookmarksScreen";
 import AO3WorksScreen from "./screens/AO3WorksScreen";
 import AO3ListingScreen from "./screens/AO3ListingScreen";
@@ -13,6 +14,7 @@ import Ao3Header, {
   HEADER_CONTENT_HEIGHT,
   ReaderHeaderInfo,
   HistoryHeaderInfo,
+  InboxHeaderInfo,
   BookmarksHeaderInfo,
   ProfileHeaderInfo,
   WorksHeaderInfo,
@@ -48,6 +50,7 @@ const AppContent: React.FC = () => {
   const navHistoryRef = useRef<NavEntry[]>([]);
   const [readerHeaderInfo, setReaderHeaderInfo] = useState<ReaderHeaderInfo | null>(null);
   const [historyHeaderInfo, setHistoryHeaderInfo] = useState<HistoryHeaderInfo | null>(null);
+  const [inboxHeaderInfo, setInboxHeaderInfo] = useState<InboxHeaderInfo | null>(null);
   const [bookmarksHeaderInfo, setBookmarksHeaderInfo] = useState<BookmarksHeaderInfo | null>(null);
   const [profileHeaderInfo, setProfileHeaderInfo] = useState<ProfileHeaderInfo | null>(null);
   const [worksHeaderInfo, setWorksHeaderInfo] = useState<WorksHeaderInfo | null>(null);
@@ -212,6 +215,16 @@ const AppContent: React.FC = () => {
           contentContainerTopPadding={headerHeight}
           onHeaderActionsChange={setHistoryHeaderInfo}
         />
+      ) : activeTab === "inbox" ? (
+        <AO3InboxScreen
+          username={username!}
+          onClose={goBack}
+          onOpenWork={openReader}
+          onPressAuthor={openProfile}
+          onScroll={handleScroll}
+          contentContainerTopPadding={headerHeight}
+          onHeaderActionsChange={setInboxHeaderInfo}
+        />
       ) : activeTab === "bookmarks" ? (
         <AO3BookmarksScreen
           // Remount per user so switching whose bookmarks we're viewing
@@ -282,6 +295,7 @@ const AppContent: React.FC = () => {
         onLogout={logout}
         readerHeaderInfo={readerHeaderInfo}
         historyHeaderInfo={historyHeaderInfo}
+        inboxHeaderInfo={inboxHeaderInfo}
         bookmarksHeaderInfo={bookmarksHeaderInfo}
         profileHeaderInfo={profileHeaderInfo}
         worksHeaderInfo={worksHeaderInfo}
