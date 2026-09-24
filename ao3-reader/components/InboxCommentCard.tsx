@@ -1,8 +1,9 @@
 import React, { useCallback, useState } from "react";
-import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Image, Linking, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { AO3InboxComment } from "../api/ao3InboxTypes";
 import type { AO3Link } from "./AO3WorkBlurb";
+import InlineReplyForm from "./InlineReplyForm";
 
 // Long enough that collapsing it is worth an extra tap (some authors reply
 // with multi-thousand-character essays).
@@ -15,9 +16,18 @@ interface Props {
   onPressAuthor?: (author: AO3Link) => void;
   // Called with the work URL when the comment's target title is tapped.
   onOpenWork?: (workUrl: string) => void;
-  // Opens the comment's thread on AO3 — the inbox's own reply link is
-  // AJAX-only, so replying happens there.
-  onReply: (comment: AO3InboxComment) => void;
+  // Whether THIS card's inline reply form is currently open. Kept as a
+  // per-row boolean (rather than the screen just tracking "which id" and
+  // every card checking it) so an inactive card's props never change when
+  // some OTHER card's reply state changes — see AO3InboxScreen's renderItem.
+  isReplying: boolean;
+  replyLoading: boolean;
+  replyError: string | null;
+  replySubmitting: boolean;
+  // Reply button always calls this — the screen owns opening/closing and
+  // fetching the actual form (AO3's own inline "Reply" AJAX endpoint).
+  onToggleReply: (comment: AO3InboxComment) => void;
+  onSubmitReply: (comment: AO3InboxComment, text: string) => void;
 }
 
 const InboxCommentCard: React.FC<Props> = ({
@@ -26,7 +36,12 @@ const InboxCommentCard: React.FC<Props> = ({
   onToggleSelect,
   onPressAuthor,
   onOpenWork,
-  onReply,
+  isReplying,
+  replyLoading,
+  replyError,
+  replySubmitting,
+  onToggleReply,
+  onSubmitReply,
 }) => {
   const [expanded, setExpanded] = useState(false);
   const isLong = comment.body.length > COLLAPSE_THRESHOLD;
@@ -36,12 +51,20 @@ const InboxCommentCard: React.FC<Props> = ({
   }, [comment.author, onPressAuthor]);
 
   const handleTarget = useCallback(() => {
-    if (comment.workUrl && onOpenWork) onOpenWork(comment.workUrl);
-    else if (comment.targetHref) onReply(comment);
-  }, [comment, onOpenWork, onReply]);
+    if (comment.workUrl && onOpenWork) {
+      onOpenWork(comment.workUrl);
+    } else if (comment.targetHref) {
+      // Not a work (e.g. a series) — no in-app reader for that, so this
+      // falls back to opening the thread in the browser instead.
+      Linking.openURL(comment.targetHref).catch((err) => {
+        console.warn("[InboxCommentCard] Could not open comment target:", err);
+      });
+    }
+  }, [comment, onOpenWork]);
 
   const handleSelect = useCallback(() => onToggleSelect(comment.inboxId), [onToggleSelect, comment.inboxId]);
-  const handleReply = useCallback(() => onReply(comment), [onReply, comment]);
+  const handleToggleReply = useCallback(() => onToggleReply(comment), [onToggleReply, comment]);
+  const handleSubmitReply = useCallback((text: string) => onSubmitReply(comment, text), [onSubmitReply, comment]);
   const handleToggleExpanded = useCallback(() => setExpanded((prev) => !prev), []);
 
   return (
@@ -99,9 +122,12 @@ const InboxCommentCard: React.FC<Props> = ({
           ) : null}
         </View>
 
-        <TouchableOpacity style={styles.actionBtn} onPress={handleReply}>
+        <TouchableOpacity
+          style={[styles.actionBtn, isReplying && styles.actionBtnSelected]}
+          onPress={handleToggleReply}
+        >
           <Ionicons name="arrow-undo-outline" size={14} color="#ddd" />
-          <Text style={styles.actionText}>Reply</Text>
+          <Text style={styles.actionText}>{isReplying ? "Close" : "Reply"}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -116,6 +142,16 @@ const InboxCommentCard: React.FC<Props> = ({
           <Text style={styles.actionText}>Select</Text>
         </TouchableOpacity>
       </View>
+
+      {isReplying ? (
+        <InlineReplyForm
+          loading={replyLoading}
+          error={replyError}
+          submitting={replySubmitting}
+          onSubmit={handleSubmitReply}
+          onCancel={handleToggleReply}
+        />
+      ) : null}
     </View>
   );
 };
@@ -242,6 +278,6 @@ const styles = StyleSheet.create({
   },
 });
 
-// Memoized: the inbox list re-renders whenever any row's selection changes,
-// but only the toggled row's props actually differ.
+// Memoized: the inbox list re-renders whenever any row's selection or reply
+// state changes, but only the affected row's props actually differ.
 export default React.memo(InboxCommentCard);

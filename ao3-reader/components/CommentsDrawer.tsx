@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useCallback, useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -10,9 +10,17 @@ import {
   Image,
   Dimensions,
   Animated,
+  Alert,
 } from "react-native";
 import { X, MessageCircle } from "lucide-react-native";
 import { fetchWithSession } from "../api/ao3Auth";
+import { fetchReplyForm, postReplyComment, toAbsoluteAO3Url, AO3ReplyForm } from "../api/ao3Comments";
+import InlineReplyForm from "./InlineReplyForm";
+
+// This drawer's own accent color (used elsewhere throughout its styles) —
+// passed into the shared InlineReplyForm so its Comment button matches
+// instead of the Inbox's green.
+const ACCENT_COLOR = "#4dd0e1";
 
 interface Reply {
   id: string;
@@ -21,6 +29,9 @@ interface Reply {
   avatarUrl: string;
   date: string;
   text: string;
+  // AO3's own "Reply" action link for this specific comment/reply — a
+  // `data-remote="true"` AJAX endpoint that returns the inline reply form.
+  replyHref?: string;
   replies?: Reply[]; // Support nested replies
 }
 
@@ -32,6 +43,7 @@ interface Comment {
   chapterTitle: string;
   date: string;
   text: string;
+  replyHref?: string;
   replies: Reply[];
 }
 
@@ -50,6 +62,15 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
   const [currentPage, setCurrentPage] = useState(0);
   const [totalComments, setTotalComments] = useState(0);
   const commentsPerPage = 30;
+
+  // Which comment/reply's inline reply form is open, if any — AO3's own
+  // comment threads (and its Inbox) open this in place rather than sending
+  // you to the comment's own page.
+  const [replyingId, setReplyingId] = useState<string | null>(null);
+  const [replyForm, setReplyForm] = useState<AO3ReplyForm | null>(null);
+  const [replyLoading, setReplyLoading] = useState(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
+  const [replySubmitting, setReplySubmitting] = useState(false);
 
   // Load comments when drawer opens
   useEffect(() => {
@@ -107,6 +128,37 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
     }
 
     return { avatarUrl, username, userLink, date, text };
+  };
+
+  // AO3 gives the Reply action link its own predictable id —
+  // "add_comment_reply_link_<commentId>" wrapping the <a> itself, e.g.
+  //   <ul class="actions" id="navigation_for_comment_948819461">
+  //     <li id="add_comment_reply_link_948819461"><a data-remote="true"
+  //         href="/comments/add_comment_reply?chapter_id=X&id=948819461">Reply</a></li>
+  //     <li><a href="/comments/948819461">Thread</a></li>
+  //     ...
+  //   </ul>
+  // — searched for across the WHOLE page rather than scoped to this
+  // comment's own captured <li> block, because that block's own non-greedy
+  // capture (see scanAllComments) stops at the FIRST </li> it finds, which
+  // can be one of these nested action-list items (cutting the block off
+  // before, or partway through, the actions list) rather than the outer
+  // comment's real closing tag.
+  const extractReplyHref = (fullHtml: string, liElement: string, commentId: string): string | undefined => {
+    const idMatch = fullHtml.match(
+      new RegExp(`id="add_comment_reply_link_${commentId}"[^>]*>\\s*<a\\b[^>]*href="([^"]+)"`, "i"),
+    );
+    if (idMatch) {
+      return toAbsoluteAO3Url(idMatch[1].replace(/&amp;/g, "&"));
+    }
+
+    // Fallback for pages that don't render that predictable id: look for a
+    // generic "Reply" action link inside this comment's own actions list.
+    const actionsMatch = liElement.match(/<ul[^>]*class="[^"]*actions[^"]*"[^>]*>([\s\S]*?)<\/ul>/i);
+    if (!actionsMatch) return undefined;
+    const linkMatch = actionsMatch[1].match(/<a\b[^>]*href="([^"]+)"[^>]*>\s*Reply\s*<\/a>/i);
+    if (!linkMatch) return undefined;
+    return toAbsoluteAO3Url(linkMatch[1].replace(/&amp;/g, "&"));
   };
 
   // Step 1: Find all comments and identify if they're root or replies
@@ -196,8 +248,10 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
     return allComments;
   };
 
-  // Step 2: Extract data from a comment block
-  const parseCommentElement = (liElement: string, commentId: string) => {
+  // Step 2: Extract data from a comment block. `fullHtml` (the whole fetched
+  // page) is threaded through just for extractReplyHref's global id lookup —
+  // see the comment there for why it can't rely on `liElement` alone.
+  const parseCommentElement = (fullHtml: string, liElement: string, commentId: string) => {
     try {
       const { avatarUrl, username, userLink, date, text } = extractCommentData(liElement, commentId);
 
@@ -207,7 +261,9 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
       const chapterMatch = liElement.match(/<a[^>]*href="\/works\/\d+\/chapters\/\d+"[^>]*>([^<]+)<\/a>/i);
       const chapterTitle = chapterMatch ? chapterMatch[1].trim() : "Unknown Chapter";
 
-      return { avatarUrl, username, userLink, date, text, chapterTitle };
+      const replyHref = extractReplyHref(fullHtml, liElement, commentId);
+
+      return { avatarUrl, username, userLink, date, text, chapterTitle, replyHref };
     } catch (err) {
       console.warn("[CommentsDrawer] Error parsing comment element:", err);
       return null;
@@ -224,7 +280,7 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
     // First pass: Create all comment objects
     for (const [commentId, commentInfo] of allComments.entries()) {
       if (!commentInfo.isReply) {
-        const data = parseCommentElement(commentInfo.liElement, commentId);
+        const data = parseCommentElement(html, commentInfo.liElement, commentId);
         if (data) {
           const comment: Comment = {
             id: commentId,
@@ -234,6 +290,7 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
             chapterTitle: data.chapterTitle,
             date: data.date,
             text: data.text,
+            replyHref: data.replyHref,
             replies: [],
           };
           comments.push(comment);
@@ -245,7 +302,7 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
     // Second pass: Create and attach replies
     for (const [replyId, replyInfo] of allComments.entries()) {
       if (replyInfo.isReply && replyInfo.parentId) {
-        const data = parseCommentElement(replyInfo.liElement, replyId);
+        const data = parseCommentElement(html, replyInfo.liElement, replyId);
         if (data) {
           const reply: Reply = {
             id: replyId,
@@ -254,6 +311,7 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
             avatarUrl: data.avatarUrl,
             date: data.date,
             text: data.text,
+            replyHref: data.replyHref,
             replies: [],
           };
 
@@ -339,6 +397,82 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
   const paginatedComments = comments.slice(startIndex, endIndex);
   const totalPages = Math.ceil(comments.length / commentsPerPage);
 
+  /* ------------------------------ reply ------------------------------- */
+
+  // Tapping Reply either opens (fetching AO3's real inline reply form) or
+  // closes this specific comment/reply's reply box. Only one can be open at
+  // a time, matching AO3's own comment threads and Inbox.
+  const handleToggleReply = useCallback(
+    (id: string, replyHref?: string) => {
+      if (replyingId === id) {
+        setReplyingId(null);
+        setReplyForm(null);
+        setReplyError(null);
+        return;
+      }
+
+      setReplyingId(id);
+      setReplyForm(null);
+      setReplyError(null);
+
+      if (!replyHref) {
+        setReplyError("AO3 didn't provide a reply link for this comment.");
+        return;
+      }
+
+      setReplyLoading(true);
+      fetchReplyForm(replyHref)
+        .then((form) => {
+          setReplyForm(form);
+          if (!form) setReplyError("Couldn't load the reply form. Please try again.");
+        })
+        .catch((err) => {
+          console.warn("[CommentsDrawer] Could not load reply form:", err);
+          setReplyError("Couldn't load the reply form. Please try again.");
+        })
+        .finally(() => setReplyLoading(false));
+    },
+    [replyingId],
+  );
+
+  // Replays whatever Rails actually rendered for the reply form (see
+  // fetchReplyForm) rather than guessing its field names — the same
+  // "resubmit the real form" approach the Inbox's reply feature uses.
+  const handleSubmitReply = useCallback(
+    (text: string) => {
+      if (!replyForm) return;
+      setReplySubmitting(true);
+      postReplyComment(replyForm, text, currentUrl)
+        .then((result) => {
+          if (result.ok) {
+            setReplyingId(null);
+            setReplyForm(null);
+            Alert.alert("Reply posted", "Your reply was posted to AO3.");
+          } else if (result.reason === "auth") {
+            Alert.alert("Couldn't post reply", "AO3 may have signed you out. Try reloading and signing in again.");
+          } else if (result.reason === "token") {
+            Alert.alert(
+              "Couldn't post reply",
+              "AO3 rejected the request (expired token). Reopen this reply and try again.",
+            );
+          } else {
+            Alert.alert(
+              "Couldn't post reply",
+              result.status
+                ? `AO3 didn't confirm the reply (status ${result.status}).`
+                : "Something went wrong posting your reply.",
+            );
+          }
+        })
+        .catch((err) => {
+          console.warn("[CommentsDrawer] Reply submit failed:", err);
+          Alert.alert("Couldn't post reply", "Something went wrong. Please try again.");
+        })
+        .finally(() => setReplySubmitting(false));
+    },
+    [replyForm, currentUrl],
+  );
+
   // Recursive render function for nested replies
   const renderReply = (reply: Reply, depth: number) => {
     const marginLeft = depth * 20 + 30;
@@ -373,9 +507,23 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
           <Text style={styles.replyText}>{reply.text}</Text>
 
           {/* Reply to Reply Button */}
-          <TouchableOpacity style={styles.replyToReplyButton}>
-            <Text style={styles.replyButtonText}>Responder</Text>
+          <TouchableOpacity
+            style={[styles.replyToReplyButton, replyingId === reply.id && styles.replyButtonActive]}
+            onPress={() => handleToggleReply(reply.id, reply.replyHref)}
+          >
+            <Text style={styles.replyButtonText}>{replyingId === reply.id ? "Fechar" : "Responder"}</Text>
           </TouchableOpacity>
+
+          {replyingId === reply.id ? (
+            <InlineReplyForm
+              loading={replyLoading}
+              error={replyError}
+              submitting={replySubmitting}
+              onSubmit={handleSubmitReply}
+              onCancel={() => handleToggleReply(reply.id, reply.replyHref)}
+              accentColor={ACCENT_COLOR}
+            />
+          ) : null}
         </View>
 
         {/* Nested Replies */}
@@ -465,9 +613,25 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
                     <Text style={styles.commentText}>{comment.text}</Text>
 
                     {/* Reply Button */}
-                    <TouchableOpacity style={styles.replyButton}>
-                      <Text style={styles.replyButtonText}>Responder</Text>
+                    <TouchableOpacity
+                      style={[styles.replyButton, replyingId === comment.id && styles.replyButtonActive]}
+                      onPress={() => handleToggleReply(comment.id, comment.replyHref)}
+                    >
+                      <Text style={styles.replyButtonText}>
+                        {replyingId === comment.id ? "Fechar" : "Responder"}
+                      </Text>
                     </TouchableOpacity>
+
+                    {replyingId === comment.id ? (
+                      <InlineReplyForm
+                        loading={replyLoading}
+                        error={replyError}
+                        submitting={replySubmitting}
+                        onSubmit={handleSubmitReply}
+                        onCancel={() => handleToggleReply(comment.id, comment.replyHref)}
+                        accentColor={ACCENT_COLOR}
+                      />
+                    ) : null}
                   </View>
 
                   {/* Replies */}
@@ -657,6 +821,9 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     borderWidth: 1,
     borderColor: "#333",
+  },
+  replyButtonActive: {
+    borderColor: "#4dd0e1",
   },
   replyButtonText: {
     color: "#4dd0e1",

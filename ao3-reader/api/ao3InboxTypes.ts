@@ -19,6 +19,9 @@ export interface AO3InboxComment {
   datetime?: string;
   avatarUrl?: string;
   body: string;
+  // The inbox's own "Reply" link — a `data-remote="true"` AJAX endpoint that
+  // returns the inline reply form for this specific comment.
+  replyHref?: string;
 }
 
 export interface AO3InboxFilterOption {

@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
-  Linking,
   NativeScrollEvent,
   NativeSyntheticEvent,
   RefreshControl,
@@ -16,6 +15,7 @@ import {
 import { WebView, WebViewMessageEvent } from "react-native-webview";
 import { Ionicons } from "@expo/vector-icons";
 import { fetchWithSession } from "../api/ao3Auth";
+import { fetchReplyForm, postReplyComment, AO3ReplyForm } from "../api/ao3Comments";
 import type {
   AO3InboxComment,
   AO3InboxFilterGroup,
@@ -190,6 +190,10 @@ const INBOX_INJECTED_JS = `
     var checkbox = li.querySelector("input[name='inbox_comments[]']");
     var targetHref = targetA ? abs(targetA.getAttribute("href")) : null;
     var workMatch = targetHref ? targetHref.match(/\\/works\\/(\\d+)/) : null;
+    var actionsList = li.querySelector("ul.actions[role='menu']") || li.querySelector("ul.actions");
+    var replyLink = actionsList
+      ? Array.from(actionsList.querySelectorAll("a")).find(function(a) { return /reply/i.test(text(a)); })
+      : null;
     return {
       id: (li.id || "").replace(/^feedback_comment_/, ""),
       inboxId: checkbox ? checkbox.value : "",
@@ -202,6 +206,7 @@ const INBOX_INJECTED_JS = `
       datetime: text(li.querySelector(".posted.datetime")) || undefined,
       avatarUrl: iconImg ? abs(iconImg.getAttribute("src")) || undefined : undefined,
       body: bodyText(li.querySelector("blockquote.userstuff")),
+      replyHref: replyLink ? abs(replyLink.getAttribute("href")) || undefined : undefined,
     };
   }
 
@@ -385,6 +390,13 @@ const AO3InboxScreen: React.FC<Props> = ({
   const [filterGroups, setFilterGroups] = useState<AO3InboxFilterGroup[]>([]);
   const [filterValues, setFilterValues] = useState<Record<string, string>>({});
   const [filterPanelVisible, setFilterPanelVisible] = useState(false);
+  // Which comment's inline reply form is open, if any — AO3's own inbox
+  // opens this in place rather than sending you to the comment's page.
+  const [replyingId, setReplyingId] = useState<string | null>(null);
+  const [replyForm, setReplyForm] = useState<AO3ReplyForm | null>(null);
+  const [replyLoading, setReplyLoading] = useState(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
+  const [replySubmitting, setReplySubmitting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -543,12 +555,79 @@ const AO3InboxScreen: React.FC<Props> = ({
     );
   }, [selectedIds, runMassAction]);
 
-  const handleReply = useCallback((comment: AO3InboxComment) => {
-    if (!comment.targetHref) return;
-    Linking.openURL(comment.targetHref).catch((err) => {
-      console.warn("[AO3InboxScreen] Could not open comment thread:", err);
-    });
-  }, []);
+  /* ------------------------------ reply ------------------------------- */
+
+  // Tapping Reply either opens (fetching AO3's real inline reply form —
+  // see collectMassEdit's sibling in the injected JS, replyHref) or closes
+  // this specific comment's reply box. Only one can be open at a time,
+  // matching AO3's own inbox.
+  const handleToggleReply = useCallback(
+    (comment: AO3InboxComment) => {
+      if (replyingId === comment.id) {
+        setReplyingId(null);
+        setReplyForm(null);
+        setReplyError(null);
+        return;
+      }
+
+      setReplyingId(comment.id);
+      setReplyForm(null);
+      setReplyError(null);
+
+      if (!comment.replyHref) {
+        setReplyError("AO3 didn't provide a reply link for this comment.");
+        return;
+      }
+
+      setReplyLoading(true);
+      fetchReplyForm(comment.replyHref)
+        .then((form) => {
+          setReplyForm(form);
+          if (!form) setReplyError("Couldn't load the reply form. Please try again.");
+        })
+        .catch((err) => {
+          console.warn("[AO3InboxScreen] Could not load reply form:", err);
+          setReplyError("Couldn't load the reply form. Please try again.");
+        })
+        .finally(() => setReplyLoading(false));
+    },
+    [replyingId],
+  );
+
+  // Replays whatever Rails actually rendered for the reply form (see
+  // fetchReplyForm) rather than guessing its field names — the same
+  // "resubmit the real form" approach the bookmark/history/subscribe
+  // actions elsewhere in this app already use.
+  const handleSubmitReply = useCallback(
+    (comment: AO3InboxComment, text: string) => {
+      if (!replyForm) return;
+      setReplySubmitting(true);
+      postReplyComment(replyForm, text, currentUrl)
+        .then((result) => {
+          if (result.ok) {
+            setReplyingId(null);
+            setReplyForm(null);
+            // Reflect the reply immediately rather than waiting on a refetch.
+            setItems((prev) => prev.map((item) => (item.id === comment.id ? { ...item, isReplied: true } : item)));
+          } else if (result.reason === "auth") {
+            Alert.alert("Couldn't post reply", "AO3 may have signed you out. Try reloading and signing in again.");
+          } else if (result.reason === "token") {
+            Alert.alert("Couldn't post reply", "AO3 rejected the request (expired token). Reopen this reply and try again.");
+          } else {
+            Alert.alert(
+              "Couldn't post reply",
+              result.status ? `AO3 didn't confirm the reply (status ${result.status}).` : "Something went wrong posting your reply.",
+            );
+          }
+        })
+        .catch((err) => {
+          console.warn("[AO3InboxScreen] Reply submit failed:", err);
+          Alert.alert("Couldn't post reply", "Something went wrong. Please try again.");
+        })
+        .finally(() => setReplySubmitting(false));
+    },
+    [replyForm, currentUrl],
+  );
 
   /* ------------------------------ filters ---------------------------- */
 
@@ -619,19 +698,42 @@ const AO3InboxScreen: React.FC<Props> = ({
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: AO3InboxComment }) => (
-      <View style={styles.itemWrap}>
-        <InboxCommentCard
-          comment={item}
-          selected={selectedIds.has(item.inboxId)}
-          onToggleSelect={toggleSelect}
-          onPressAuthor={onPressAuthor}
-          onOpenWork={onOpenWork}
-          onReply={handleReply}
-        />
-      </View>
-    ),
-    [selectedIds, toggleSelect, onPressAuthor, onOpenWork, handleReply],
+    ({ item }: { item: AO3InboxComment }) => {
+      // Only the card whose reply form is actually open gets the real
+      // loading/error/submitting values — every other card always sees the
+      // same (falsy) values regardless of what those states are doing, so
+      // React.memo sees no prop change for them and skips re-rendering.
+      const isReplying = item.id === replyingId;
+      return (
+        <View style={styles.itemWrap}>
+          <InboxCommentCard
+            comment={item}
+            selected={selectedIds.has(item.inboxId)}
+            onToggleSelect={toggleSelect}
+            onPressAuthor={onPressAuthor}
+            onOpenWork={onOpenWork}
+            isReplying={isReplying}
+            replyLoading={isReplying && replyLoading}
+            replyError={isReplying ? replyError : null}
+            replySubmitting={isReplying && replySubmitting}
+            onToggleReply={handleToggleReply}
+            onSubmitReply={handleSubmitReply}
+          />
+        </View>
+      );
+    },
+    [
+      selectedIds,
+      toggleSelect,
+      onPressAuthor,
+      onOpenWork,
+      replyingId,
+      replyLoading,
+      replyError,
+      replySubmitting,
+      handleToggleReply,
+      handleSubmitReply,
+    ],
   );
 
   const refreshControl = useMemo(
