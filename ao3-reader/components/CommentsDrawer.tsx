@@ -13,14 +13,15 @@ import {
   Alert,
 } from "react-native";
 import { X, MessageCircle } from "lucide-react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { fetchWithSession } from "../api/ao3Auth";
 import { fetchReplyForm, postReplyComment, toAbsoluteAO3Url, AO3ReplyForm } from "../api/ao3Comments";
 import InlineReplyForm from "./InlineReplyForm";
 
 // This drawer's own accent color (used elsewhere throughout its styles) —
-// passed into the shared InlineReplyForm so its Comment button matches
-// instead of the Inbox's green.
-const ACCENT_COLOR = "#4dd0e1";
+// passed into the shared InlineReplyForm so its Comment button matches the
+// same green already used for author names.
+const ACCENT_COLOR = "#7ec14b";
 
 interface Reply {
   id: string;
@@ -479,40 +480,31 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
     
     return (
       <View key={reply.id}>
-        <View style={[
-          styles.replyItem,
-          { marginLeft }
-        ]}>
-          {/* Published date - Top Right for reply */}
-          <View style={styles.topRightDate}>
-            <Text style={styles.topRightDateText}>{reply.date}</Text>
-          </View>
-
-          {/* Reply User Info */}
-          <View style={styles.replyUserSection}>
+        <View style={[styles.card, styles.replyCard, { marginLeft }]}>
+          <View style={styles.topRow}>
             {reply.avatarUrl ? (
-              <Image
-                source={{ uri: reply.avatarUrl }}
-                style={styles.replyAvatar}
-              />
+              <Image source={{ uri: reply.avatarUrl }} style={styles.replyAvatar} />
             ) : (
-              <View style={styles.replyAvatarPlaceholder}>
-                <Text style={styles.avatarPlaceholderText}>?</Text>
-              </View>
+              <View style={[styles.replyAvatar, styles.avatarPlaceholder]} />
             )}
-            <Text style={styles.replyUsername}>{reply.username}</Text>
+            <View style={styles.main}>
+              <Text style={styles.replyByline}>{reply.username}</Text>
+              {reply.date ? <Text style={styles.date}>{reply.date}</Text> : null}
+            </View>
           </View>
 
-          {/* Reply Text */}
-          <Text style={styles.replyText}>{reply.text}</Text>
+          {reply.text ? <Text style={styles.replyBody}>{reply.text}</Text> : null}
 
-          {/* Reply to Reply Button */}
-          <TouchableOpacity
-            style={[styles.replyToReplyButton, replyingId === reply.id && styles.replyButtonActive]}
-            onPress={() => handleToggleReply(reply.id, reply.replyHref)}
-          >
-            <Text style={styles.replyButtonText}>{replyingId === reply.id ? "Fechar" : "Responder"}</Text>
-          </TouchableOpacity>
+          <View style={styles.actionsRow}>
+            <View style={styles.badges} />
+            <TouchableOpacity
+              style={[styles.actionBtn, replyingId === reply.id && styles.actionBtnActive]}
+              onPress={() => handleToggleReply(reply.id, reply.replyHref)}
+            >
+              <Ionicons name="arrow-undo-outline" size={13} color="#ddd" />
+              <Text style={styles.actionText}>{replyingId === reply.id ? "Fechar" : "Responder"}</Text>
+            </TouchableOpacity>
+          </View>
 
           {replyingId === reply.id ? (
             <InlineReplyForm
@@ -561,7 +553,7 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <MessageCircle color="#4dd0e1" size={20} />
+            <MessageCircle color="#7ec14b" size={20} />
             <Text style={styles.title}>Comentários ({totalComments})</Text>
           </View>
           <TouchableOpacity onPress={onClose}>
@@ -572,7 +564,7 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
         {/* Content */}
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#4dd0e1" />
+            <ActivityIndicator size="large" color="#7ec14b" />
             <Text style={styles.loadingText}>Carregando comentários...</Text>
           </View>
         ) : comments.length === 0 ? (
@@ -585,42 +577,41 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
               {paginatedComments.map((comment) => (
                 <View key={comment.id} style={styles.commentContainer}>
                   {/* Main Comment */}
-                  <View style={styles.commentItem}>
-                    {/* Published date - Top Right */}
-                    <View style={styles.topRightDate}>
-                      <Text style={styles.topRightDateText}>{comment.date}</Text>
-                    </View>
-
-                    {/* User Info with Avatar */}
-                    <View style={styles.userSection}>
+                  <View style={styles.card}>
+                    <View style={styles.topRow}>
                       {comment.avatarUrl ? (
-                        <Image
-                          source={{ uri: comment.avatarUrl }}
-                          style={styles.avatar}
-                        />
+                        <Image source={{ uri: comment.avatarUrl }} style={styles.avatar} />
                       ) : (
-                        <View style={styles.avatarPlaceholder}>
-                          <Text style={styles.avatarPlaceholderText}>?</Text>
-                        </View>
+                        <View style={[styles.avatar, styles.avatarPlaceholder]} />
                       )}
-                      <View style={styles.userInfo}>
-                        <Text style={styles.username}>{comment.username}</Text>
-                        <Text style={styles.chapterTitle}>{comment.chapterTitle}</Text>
+                      <View style={styles.main}>
+                        <Text style={styles.byline}>
+                          <Text style={styles.username}>{comment.username}</Text>
+                          {comment.chapterTitle ? (
+                            <>
+                              <Text style={styles.on}> on </Text>
+                              <Text style={styles.target}>{comment.chapterTitle}</Text>
+                            </>
+                          ) : null}
+                        </Text>
+                        {comment.date ? <Text style={styles.date}>{comment.date}</Text> : null}
                       </View>
                     </View>
 
-                    {/* Comment Text */}
-                    <Text style={styles.commentText}>{comment.text}</Text>
+                    {comment.text ? <Text style={styles.commentText}>{comment.text}</Text> : null}
 
-                    {/* Reply Button */}
-                    <TouchableOpacity
-                      style={[styles.replyButton, replyingId === comment.id && styles.replyButtonActive]}
-                      onPress={() => handleToggleReply(comment.id, comment.replyHref)}
-                    >
-                      <Text style={styles.replyButtonText}>
-                        {replyingId === comment.id ? "Fechar" : "Responder"}
-                      </Text>
-                    </TouchableOpacity>
+                    <View style={styles.actionsRow}>
+                      <View style={styles.badges} />
+                      <TouchableOpacity
+                        style={[styles.actionBtn, replyingId === comment.id && styles.actionBtnActive]}
+                        onPress={() => handleToggleReply(comment.id, comment.replyHref)}
+                      >
+                        <Ionicons name="arrow-undo-outline" size={14} color="#ddd" />
+                        <Text style={styles.actionText}>
+                          {replyingId === comment.id ? "Fechar" : "Responder"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
 
                     {replyingId === comment.id ? (
                       <InlineReplyForm
@@ -738,95 +729,103 @@ const styles = StyleSheet.create({
   commentContainer: {
     marginVertical: 8,
   },
-  commentItem: {
-    backgroundColor: "#1a1a1a",
-    borderRadius: 8,
-    padding: 12,
-    borderLeftWidth: 3,
-    borderLeftColor: "#4dd0e1",
-    position: "relative",
-  },
-  dateBadge: {
-    position: "absolute",
-    top: 8,
-    left: 8,
-    backgroundColor: "#4dd0e1",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 3,
-  },
-  dateBadgeText: {
-    color: "#000",
-    fontSize: 10,
-    fontWeight: "bold",
-  },
-  topRightDate: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-  },
-  topRightDateText: {
-    color: "#999",
-    fontSize: 11,
-  },
-  userSection: {
-    flexDirection: "row",
-    marginBottom: 10,
-    marginTop: 20,
+  // Comment / reply card — matches InboxCommentCard's black-card look.
+  card: {
+    backgroundColor: "#111",
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+    borderRadius: 16,
+    padding: 14,
     gap: 10,
   },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 0,
-    backgroundColor: "#333",
+  replyCard: {
+    backgroundColor: "#0f0f0f",
   },
-  avatarPlaceholder: {
-    width: 36,
-    height: 36,
-    borderRadius: 0,
-    backgroundColor: "#333",
-    alignItems: "center",
-    justifyContent: "center",
+  topRow: {
+    flexDirection: "row",
+    gap: 10,
   },
-  avatarPlaceholderText: {
-    color: "#999",
-    fontWeight: "bold",
-  },
-  userInfo: {
+  main: {
     flex: 1,
     justifyContent: "center",
   },
-  username: {
-    color: "#4dd0e1",
-    fontWeight: "bold",
-    fontSize: 13,
-  },
-  chapterTitle: {
-    color: "#aaa",
-    fontSize: 12,
-    marginTop: 2,
-  },
-  commentText: {
-    color: "#ccc",
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 10,
-  },
-  replyButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    backgroundColor: "#222",
-    borderRadius: 4,
-    alignSelf: "flex-start",
+  avatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: "#333",
   },
-  replyButtonActive: {
-    borderColor: "#4dd0e1",
+  replyAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#333",
   },
-  replyButtonText: {
-    color: "#4dd0e1",
+  avatarPlaceholder: {
+    backgroundColor: "#222",
+  },
+  byline: {
+    fontSize: 13,
+  },
+  username: {
+    color: "#7ec14b",
+    fontWeight: "bold",
+  },
+  on: {
+    color: "#888",
+  },
+  target: {
+    color: "#ccc",
+    textDecorationLine: "underline",
+  },
+  replyByline: {
+    color: "#7ec14b",
+    fontWeight: "bold",
+    fontSize: 13,
+  },
+  date: {
+    color: "#888",
+    fontSize: 11,
+    marginTop: 2,
+  },
+  commentText: {
+    color: "#efefef",
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  replyBody: {
+    color: "#ddd",
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  actionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderTopWidth: 1,
+    borderTopColor: "#222",
+    paddingTop: 10,
+  },
+  badges: {
+    flex: 1,
+  },
+  actionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: "#1c1c1c",
+    borderWidth: 1,
+    borderColor: "#333",
+  },
+  actionBtnActive: {
+    borderColor: "#7ec14b",
+  },
+  actionText: {
+    color: "#ddd",
     fontSize: 12,
     fontWeight: "500",
   },
@@ -843,69 +842,6 @@ const styles = StyleSheet.create({
     marginLeft: 0,
     borderLeftWidth: 1,
     borderLeftColor: "#222",
-  },
-  replyItem: {
-    backgroundColor: "#0f0f0f",
-    borderRadius: 6,
-    padding: 10,
-    marginVertical: 6,
-    position: "relative",
-  },
-  replyDateBadge: {
-    position: "absolute",
-    top: 6,
-    left: 6,
-    backgroundColor: "#555",
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 3,
-  },
-  replyDateBadgeText: {
-    color: "#ccc",
-    fontSize: 9,
-    fontWeight: "500",
-  },
-  replyUserSection: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8,
-    marginTop: 20,
-    gap: 8,
-  },
-  replyAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 0,
-    backgroundColor: "#333",
-  },
-  replyAvatarPlaceholder: {
-    width: 28,
-    height: 28,
-    borderRadius: 0,
-    backgroundColor: "#333",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  replyUsername: {
-    color: "#7dd0e1",
-    fontWeight: "600",
-    fontSize: 12,
-    flex: 1,
-  },
-  replyText: {
-    color: "#bbb",
-    fontSize: 12,
-    lineHeight: 16,
-    marginBottom: 8,
-  },
-  replyToReplyButton: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    backgroundColor: "#1a1a1a",
-    borderRadius: 3,
-    alignSelf: "flex-start",
-    borderWidth: 1,
-    borderColor: "#333",
   },
   // Pagination
   pagination: {
@@ -929,7 +865,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   pageButtonText: {
-    color: "#4dd0e1",
+    color: "#7ec14b",
     fontSize: 12,
     fontWeight: "500",
   },
