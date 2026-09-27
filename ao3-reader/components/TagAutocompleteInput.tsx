@@ -21,6 +21,11 @@ interface Props {
   placeholder?: string;
   placeholderTextColor?: string;
   style?: StyleProp<TextStyle>;
+  // Defaults to AO3's tag endpoint. Pass fetchCollectionAutocomplete (or any
+  // other endpoint returning the same { id, name }[] shape) to reuse this
+  // same chip + dropdown UI for a different field, e.g. a bookmark's "Add to
+  // collections" list.
+  fetchSuggestions?: (term: string) => Promise<AO3TagSuggestion[]>;
 }
 
 const splitTags = (value: string) =>
@@ -35,6 +40,7 @@ const TagAutocompleteInput: React.FC<Props> = ({
   placeholder,
   placeholderTextColor,
   style,
+  fetchSuggestions = fetchTagAutocomplete,
 }) => {
   // Already-committed tags render as removable chips above the text box —
   // matching AO3's own "added tag" pills — while `draft` is just whatever's
@@ -60,6 +66,9 @@ const TagAutocompleteInput: React.FC<Props> = ({
     };
   }, []);
 
+  const fetchSuggestionsRef = useRef(fetchSuggestions);
+  fetchSuggestionsRef.current = fetchSuggestions;
+
   const scheduleFetch = useCallback((term: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
@@ -74,7 +83,7 @@ const TagAutocompleteInput: React.FC<Props> = ({
 
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
-      const results = await fetchTagAutocomplete(trimmed);
+      const results = await fetchSuggestionsRef.current(trimmed);
       if (seq !== requestSeqRef.current) return;
       setHighlightTerm(trimmed);
       setSuggestions(results);

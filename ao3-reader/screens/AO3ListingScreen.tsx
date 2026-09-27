@@ -23,6 +23,7 @@ import AO3WorkBlurb, {
   AO3Link,
 } from "../components/AO3WorkBlurb";
 import BookmarkOwnerCard from "../components/BookmarkOwnerCard";
+import BookmarkEditModal from "../components/BookmarkEditModal";
 import type { ProfileHeaderInfo } from "../components/Ao3Header";
 
 const HiddenWebView = React.forwardRef<any, any>((props, ref) => (
@@ -786,10 +787,14 @@ const AO3ListingScreen: React.FC<Props> = ({
     }
   };
 
+  const [editingBookmarkHref, setEditingBookmarkHref] = useState<string | null>(null);
+
   const handleEditBookmark = useCallback((href: string) => {
-    Linking.openURL(href).catch((err) => {
-      console.warn("[AO3ListingScreen] Could not open edit URL:", err);
-    });
+    setEditingBookmarkHref(href);
+  }, []);
+
+  const handleCloseEditBookmark = useCallback(() => {
+    setEditingBookmarkHref(null);
   }, []);
 
   const handleAddBookmarkToCollection = useCallback((href: string) => {
@@ -1126,6 +1131,14 @@ const AO3ListingScreen: React.FC<Props> = ({
         javaScriptEnabled
         domStorageEnabled
         mixedContentMode="always"
+      />
+
+      <BookmarkEditModal
+        visible={!!editingBookmarkHref}
+        editHref={editingBookmarkHref}
+        refererUrl={url}
+        onClose={handleCloseEditBookmark}
+        onSaved={handleCloseEditBookmark}
       />
     </View>
   );

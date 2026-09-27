@@ -23,6 +23,7 @@ import { buildFilterQueryString, deriveSelectionFromFacets } from "../api/ao3Fil
 import AO3WorkBlurb, { AO3BookmarkData, AO3Link } from "../components/AO3WorkBlurb";
 import BookmarkOwnerCard from "../components/BookmarkOwnerCard";
 import AO3FilterPanel from "../components/AO3FilterPanel";
+import BookmarkEditModal from "../components/BookmarkEditModal";
 import type { BookmarksHeaderInfo } from "../components/Ao3Header";
 
 const EMPTY_BOOKMARKS_FACETS: AO3FilterFacets = { kind: "bookmarks", sortOptions: [] };
@@ -630,11 +631,20 @@ const AO3BookmarksScreen: React.FC<Props> = ({
     }
   };
 
+  const [editingHref, setEditingHref] = useState<string | null>(null);
+
   const handleEdit = useCallback((href: string) => {
-    Linking.openURL(href).catch((err) => {
-      console.warn("[AO3BookmarksScreen] Could not open edit URL:", err);
-    });
+    setEditingHref(href);
   }, []);
+
+  const handleCloseEdit = useCallback(() => {
+    setEditingHref(null);
+  }, []);
+
+  const handleSavedEdit = useCallback(() => {
+    setEditingHref(null);
+    handleRefresh();
+  }, [handleRefresh]);
 
   const handleAddToCollection = useCallback((href: string) => {
     Linking.openURL(href).catch((err) => {
@@ -914,6 +924,14 @@ const AO3BookmarksScreen: React.FC<Props> = ({
         onChange={setFilterSelection}
         onApply={handleApplyFilters}
         onClear={handleClearFilters}
+      />
+
+      <BookmarkEditModal
+        visible={!!editingHref}
+        editHref={editingHref}
+        refererUrl={currentUrl}
+        onClose={handleCloseEdit}
+        onSaved={handleSavedEdit}
       />
     </View>
   );

@@ -5,21 +5,14 @@ export interface AO3TagSuggestion {
   name: string;
 }
 
-// AO3's own tag-entry fields hit this same endpoint as you type, e.g.
-// https://archiveofourown.org/autocomplete/tag?term=problema -> a JSON array
-// of { id, name } (id and name are usually identical for freeform tags).
-export async function fetchTagAutocomplete(term: string): Promise<AO3TagSuggestion[]> {
-  const trimmed = term.trim();
-  if (!trimmed) return [];
-
-  const url = `https://archiveofourown.org/autocomplete/tag?term=${encodeURIComponent(trimmed)}`;
+// AO3 only serves these endpoints' JSON to requests that look like its own
+// jQuery AJAX calls — a plain GET without these headers gets routed as a
+// normal page request instead and 404s, even though the path itself is
+// otherwise valid (confirmed against a real captured request).
+async function fetchAutocomplete(url: string, term: string): Promise<AO3TagSuggestion[]> {
   console.log("[ao3Autocomplete] Requesting:", url);
 
   try {
-    // AO3 only serves this endpoint's JSON to requests that look like its
-    // own jQuery AJAX calls — a plain GET without these headers gets routed
-    // as a normal page request instead and 404s, even though the path
-    // itself is otherwise valid (confirmed against a real captured request).
     const res = await fetchWithSession(url, {
       headers: {
         "X-Requested-With": "XMLHttpRequest",
@@ -41,11 +34,31 @@ export async function fetchTagAutocomplete(term: string): Promise<AO3TagSuggesti
       .filter((item): item is { id?: string; name: string } => !!item && typeof item.name === "string")
       .map((item) => ({ id: String(item.id ?? item.name), name: item.name }));
 
-    console.log("[ao3Autocomplete] Response:", suggestions.length, "suggestions for term:", trimmed, suggestions);
+    console.log("[ao3Autocomplete] Response:", suggestions.length, "suggestions for term:", term, suggestions);
 
     return suggestions;
   } catch (err) {
-    console.warn("[ao3Autocomplete] fetchTagAutocomplete failed:", err);
+    console.warn("[ao3Autocomplete] fetchAutocomplete failed:", err);
     return [];
   }
+}
+
+// e.g. https://archiveofourown.org/autocomplete/tag?term=problema -> a JSON
+// array of { id, name } (id and name are usually identical for freeform tags).
+export async function fetchTagAutocomplete(term: string): Promise<AO3TagSuggestion[]> {
+  const trimmed = term.trim();
+  if (!trimmed) return [];
+  return fetchAutocomplete(`https://archiveofourown.org/autocomplete/tag?term=${encodeURIComponent(trimmed)}`, trimmed);
+}
+
+// Same shape and same AJAX-only gating as the tag endpoint, just for the
+// "Add to collections" field on a bookmark's edit form, e.g.
+// https://archiveofourown.org/autocomplete/open_collection_names?term=asds
+export async function fetchCollectionAutocomplete(term: string): Promise<AO3TagSuggestion[]> {
+  const trimmed = term.trim();
+  if (!trimmed) return [];
+  return fetchAutocomplete(
+    `https://archiveofourown.org/autocomplete/open_collection_names?term=${encodeURIComponent(trimmed)}`,
+    trimmed,
+  );
 }
