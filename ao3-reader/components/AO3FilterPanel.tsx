@@ -20,6 +20,7 @@ import {
   BOOKMARK_FACET_TAG_TYPES,
   WORK_FACET_TAG_TYPES,
 } from "../api/ao3FilterTypes";
+import TagAutocompleteInput from "./TagAutocompleteInput";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const PANEL_WIDTH = Math.min(340, SCREEN_WIDTH * 0.88);
@@ -143,7 +144,7 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
           </TouchableOpacity>
         </View>
 
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           {/* Sort by — every kind has this */}
           {facets.sortOptions.length > 0 ? (
             <Section title="Sort by">
@@ -208,52 +209,67 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
               })
             : null}
 
-          {/* Free-text tag entry — works + bookmarks */}
+          {/* Free-text tag entry — works + bookmarks. Each field's wrapper
+              carries a fixed (never-changing) z-index, higher than the one
+              below it, so an open suggestions dropdown always paints over
+              the fields that follow it instead of underneath them. This has
+              to be a static value set once at mount rather than toggled in
+              response to the dropdown opening/closing — toggling a View's
+              `elevation` on Android forces it to rebuild that view's native
+              layer, which was previously found to disrupt the keyboard. */}
           {kind !== "collection-works" ? (
-            <Section title="Other tags to include">
-              <TextInput
-                style={styles.textInput}
-                placeholder="Comma-separated tag names"
-                placeholderTextColor="#666"
-                value={value.otherTagNames || ""}
-                onChangeText={(t) => set("otherTagNames", t)}
-              />
-            </Section>
+            <View style={styles.tagFieldLayer1}>
+              <Section title="Other tags to include">
+                <TagAutocompleteInput
+                  style={styles.textInput}
+                  placeholder="Comma-separated tag names"
+                  placeholderTextColor="#666"
+                  value={value.otherTagNames || ""}
+                  onChangeText={(t) => set("otherTagNames", t)}
+                />
+              </Section>
+            </View>
           ) : null}
           {kind !== "collection-works" ? (
-            <Section title="Other tags to exclude">
-              <TextInput
-                style={styles.textInput}
-                placeholder="Comma-separated tag names"
-                placeholderTextColor="#666"
-                value={value.excludedTagNames || ""}
-                onChangeText={(t) => set("excludedTagNames", t)}
-              />
-            </Section>
+            <View style={styles.tagFieldLayer2}>
+              <Section title="Other tags to exclude">
+                <TagAutocompleteInput
+                  style={styles.textInput}
+                  placeholder="Comma-separated tag names"
+                  placeholderTextColor="#666"
+                  value={value.excludedTagNames || ""}
+                  onChangeText={(t) => set("excludedTagNames", t)}
+                />
+              </Section>
+            </View>
           ) : null}
 
           {/* Bookmarker's own tags — bookmarks only */}
           {kind === "bookmarks" ? (
-            <Section title="Other bookmarker's tags to include">
-              <TextInput
-                style={styles.textInput}
-                placeholder="Comma-separated tag names"
-                placeholderTextColor="#666"
-                value={value.otherBookmarkTagNames || ""}
-                onChangeText={(t) => set("otherBookmarkTagNames", t)}
-              />
-            </Section>
+            <View style={styles.tagFieldLayer3}>
+              <Section title="Other bookmarker's tags to include">
+                <TagAutocompleteInput
+                  style={styles.textInput}
+                  placeholder="Comma-separated tag names"
+                  placeholderTextColor="#666"
+                  value={value.otherBookmarkTagNames || ""}
+                  onChangeText={(t) => set("otherBookmarkTagNames", t)}
+                />
+              </Section>
+            </View>
           ) : null}
           {kind === "bookmarks" ? (
-            <Section title="Other bookmarker's tags to exclude">
-              <TextInput
-                style={styles.textInput}
-                placeholder="Comma-separated tag names"
-                placeholderTextColor="#666"
-                value={value.excludedBookmarkTagNames || ""}
-                onChangeText={(t) => set("excludedBookmarkTagNames", t)}
-              />
-            </Section>
+            <View style={styles.tagFieldLayer4}>
+              <Section title="Other bookmarker's tags to exclude">
+                <TagAutocompleteInput
+                  style={styles.textInput}
+                  placeholder="Comma-separated tag names"
+                  placeholderTextColor="#666"
+                  value={value.excludedBookmarkTagNames || ""}
+                  onChangeText={(t) => set("excludedBookmarkTagNames", t)}
+                />
+              </Section>
+            </View>
           ) : null}
 
           {/* Crossover / Completion — works only */}
@@ -495,6 +511,12 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     gap: 8,
   },
+  // Fixed, never-toggled stacking order for the free-text tag fields — see
+  // the comment above their usage.
+  tagFieldLayer1: { zIndex: 40, elevation: 4 },
+  tagFieldLayer2: { zIndex: 30, elevation: 3 },
+  tagFieldLayer3: { zIndex: 20, elevation: 2 },
+  tagFieldLayer4: { zIndex: 10, elevation: 1 },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
