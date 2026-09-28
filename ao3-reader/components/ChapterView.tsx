@@ -59,6 +59,13 @@ const ChapterView: React.FC<Props> = ({
       strong,b{ font-weight:700; }
       hr{ height:1px; background:#444; border:none; margin:${paragraphSpacing}px 0; }
       * { -webkit-touch-callout: none; touch-action: pan-y; }
+      h3.heading{ font-size:1.05em; font-weight:700; margin:0 0 8px; padding-bottom:6px; border-bottom:1px solid #333; }
+      .preface.group blockquote.userstuff, .end.notes.module blockquote.userstuff{
+        margin:0 0 12px; padding-left:12px; border-left:2px solid #333; color:#ddd;
+      }
+      .preface.group blockquote.userstuff p, .end.notes.module blockquote.userstuff p{ margin-bottom:8px; }
+      #summary, #notes{ margin-bottom:16px; }
+      .end.notes.module{ margin-top:28px; padding-top:14px; border-top:1px solid #333; }
     `;
 
     const script = `

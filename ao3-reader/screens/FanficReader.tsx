@@ -68,6 +68,65 @@ function extractWorkId(url: string): string | null {
   return m ? m[1] : null;
 }
 
+/* ------------------------------------------------------------------ */
+/* Chapter content extraction (server-fetched HTML)                    */
+/* ------------------------------------------------------------------ */
+
+// A plain non-greedy `<div ...>([\s\S]*?)<\/div>` regex breaks on any
+// container that has its own nested <div>s (like AO3's per-chapter wrapper,
+// which nests a summary/notes preface div) — it stops at the FIRST closing
+// tag it finds, truncating everything after. This instead counts open/close
+// <div> tags from the opening match to find the one that actually balances it.
+function extractBalancedDiv(html: string, openTagRegex: RegExp): string | null {
+  const openMatch = html.match(openTagRegex);
+  if (!openMatch || openMatch.index === undefined) return null;
+
+  const start = openMatch.index + openMatch[0].length;
+  const tagRegex = /<div\b|<\/div>/gi;
+  tagRegex.lastIndex = start;
+
+  let depth = 1;
+  let m: RegExpExecArray | null;
+  while ((m = tagRegex.exec(html)) !== null) {
+    if (m[0].toLowerCase() === "</div>") {
+      depth--;
+      if (depth === 0) return html.slice(start, m.index);
+    } else {
+      depth++;
+    }
+  }
+  return null; // unbalanced — bail rather than return truncated/garbage HTML
+}
+
+// Strips the "Chapter N: Title" heading (redundant — the app shows the
+// chapter title in its own header) and the "Chapter Text" accessibility-only
+// landmark heading AO3 renders right before the story text.
+function stripReaderNoise(html: string): string {
+  return html
+    .replace(/<h3\b[^>]*\bclass=(?:"|')[^"'<>]*\btitle\b[^"'<>]*(?:"|')[^>]*>[\s\S]*?<\/h3>/gi, "")
+    .replace(/<h3\b[^>]*\bclass=(?:"|')[^"'<>]*\blandmark\b[^"'<>]*(?:"|')[^>]*>[\s\S]*?<\/h3>/gi, "")
+    .replace(/<h3\b[^>]*\bid=(?:"|')work(?:"|')[^>]*>[\s\S]*?<\/h3>/gi, "");
+}
+
+// Prefer the whole per-chapter container (includes the chapter's own
+// Summary/Notes preface and its end notes, not just the story text) over
+// just the story text alone.
+function extractChapterContent(html: string): string | null {
+  if (!html) return null;
+
+  const chapterContainer =
+    extractBalancedDiv(html, /<div[^>]*\bid=(?:"|')chapters(?:"|')[^>]*>/i) ||
+    extractBalancedDiv(html, /<div[^>]*\bid=(?:"|')chapter-\d+(?:"|')[^>]*>/i);
+  if (chapterContainer) return stripReaderNoise(chapterContainer);
+
+  // Fallback: naive non-greedy regex, safe here only because this specific
+  // element doesn't contain nested <div>s in practice.
+  const match = html.match(
+    /<div[^>]*class=(?:"|')?[^"'<>]*userstuff[^"'<>]*module[^"'<>]*?(?:"|')?[^>]*>([\s\S]*?)<\/div>/i,
+  );
+  return match && match[1] ? match[1] : null;
+}
+
 async function loadReadingProgress(workId: string): Promise<ReadingProgress | null> {
   try {
     const raw = await AsyncStorage.getItem(READING_PROGRESS_PREFIX + workId);
@@ -134,12 +193,23 @@ const INJECTED_JS = `
   }
 
   setTimeout(() => {
-    const contentEl = document.querySelector('.userstuff.module')
-      || document.querySelector('#chapters .chapter')
+    // Prefer the whole per-chapter container (includes the chapter's own
+    // Summary/Notes preface and its end notes, not just the story text) —
+    // falling back to just the story text if that container isn't found.
+    const contentEl = document.querySelector('#chapters .chapter')
+      || document.querySelector('[id^="chapter-"]')
+      || document.querySelector('.userstuff.module')
       || document.querySelector('.workskin .userstuff.module')
-      || document.querySelector('.workskin')
-      || document.querySelector('[id^="chapter-"]');
-    const contentHtml = contentEl ? contentEl.innerHTML : null;
+      || document.querySelector('.workskin');
+    let contentHtml = null;
+    if (contentEl) {
+      const clone = contentEl.cloneNode(true);
+      // Drop the "Chapter N: Title" heading (redundant — the app already
+      // shows the chapter title in its own header) and the "Chapter Text"
+      // accessibility-only landmark heading.
+      Array.from(clone.querySelectorAll('h3.title, h3.landmark, #work')).forEach(function(el) { el.remove(); });
+      contentHtml = clone.innerHTML;
+    }
     const title = (document.querySelector('h2.title') && document.querySelector('h2.title').innerText)
       || document.title
       || '';
@@ -256,21 +326,6 @@ const FanficReader: React.FC<Props> = ({
   useEffect(() => {
     if (!hydrated) return; // wait until we've checked for saved reading progress
     let cancelled = false;
-    const extractContent = (html: string): string | null => {
-      if (!html) return null;
-      // Try several AO3 selectors in order. Regex is a pragmatic fallback.
-      const patterns = [
-        /<div[^>]*class=(?:"|')?[^"'<>]*userstuff[^"'<>]*module[^"'<>]*?(?:"|')?[^>]*>([\s\S]*?)<\/div>/i,
-        /<div[^>]*id=(?:"|')?chapters(?:"|')?[^>]*>([\s\S]*?)<\/div>/i,
-        /<div[^>]*class=(?:"|')?[^"'<>]*workskin[^"'<>]*?(?:"|')?[^>]*>([\s\S]*?)<\/div>/i,
-        /<div[^>]*id=(?:"|')?chapter-[^"'<>]+(?:"|')?[^>]*>([\s\S]*?)<\/div>/i,
-      ];
-      for (const p of patterns) {
-        const m = html.match(p);
-        if (m && m[1]) return m[1];
-      }
-      return null;
-    };
 
     (async () => {
       setLoading(true);
@@ -281,7 +336,7 @@ const FanficReader: React.FC<Props> = ({
         const res = await fetchWithSession(currentUrl);
         if (res && res.ok) {
           const html = await res.text();
-          const inner = extractContent(html);
+          const inner = extractChapterContent(html);
           if (inner) {
             console.log('[FanficReader] fetchWithSession succeeded, extracted content for', currentUrl);
             if (cancelled) return;
