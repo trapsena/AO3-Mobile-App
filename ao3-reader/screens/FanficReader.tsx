@@ -579,9 +579,10 @@ const FanficReader: React.FC<Props> = ({
         onScroll={onScroll}
         currentIndex={currentTtsIndex}
         onParagraphPress={(i) => {
-          // sync paragraph click with TTS index and open controls if closed
+          // Only jump the TTS position when its controls are already open —
+          // tapping a paragraph while they're closed no longer opens them.
+          if (!ttsVisible) return;
           setCurrentTtsIndex(i);
-          if (!ttsVisible) setTtsVisible(true);
         }}
       />
 
