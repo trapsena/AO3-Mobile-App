@@ -31,9 +31,14 @@ const stripTags = (value: string) => value.replace(/<[^>]+>/g, "").trim();
 
 const toAbsoluteAO3Url = (href?: string) => {
   if (!href) return undefined;
-  if (/^https?:\/\//i.test(href)) return href;
-  if (href.startsWith("/")) return `https://archiveofourown.org${href}`;
-  return `https://archiveofourown.org/${href}`;
+  // href attributes are HTML-escaped like any other markup (an apostrophe in
+  // a tag name comes through as `&#39;`) — left undecoded, that literal
+  // `&#39;` ends up baked into the URL instead of the `'` AO3's own link
+  // actually points at, breaking the link (e.g. "BOFURI: I Don't Want...").
+  const decoded = decodeHtmlEntities(href);
+  if (/^https?:\/\//i.test(decoded)) return decoded;
+  if (decoded.startsWith("/")) return `https://archiveofourown.org${decoded}`;
+  return `https://archiveofourown.org/${decoded}`;
 };
 
 // Each category's own <li> nests a further <ol>/<li> list of its top

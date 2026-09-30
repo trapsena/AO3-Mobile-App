@@ -237,11 +237,11 @@ const styles = StyleSheet.create({
     marginTop: 40,
   },
   row: {
+    height: ROW_HEIGHT,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
-    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: "#1c1c1c",
   },
