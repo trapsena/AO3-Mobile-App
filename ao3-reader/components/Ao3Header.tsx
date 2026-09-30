@@ -10,6 +10,7 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -17,7 +18,16 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getUserIconUrl } from "../api/ao3Auth";
 
-export type Ao3Tab = "home" | "reader" | "history" | "inbox" | "bookmarks" | "profile" | "works";
+export type Ao3Tab =
+  | "home"
+  | "reader"
+  | "history"
+  | "inbox"
+  | "bookmarks"
+  | "profile"
+  | "works"
+  | "fandoms"
+  | "allFandoms";
 
 // Published by FanficReader (via onHeaderActionsChange) while the Reader tab
 // is active, so Ao3Header can render the fic/chapter title and the
@@ -80,6 +90,17 @@ export interface WorksHeaderInfo {
   onToggleFilters: () => void;
 }
 
+// Published by AO3AllFandomsScreen (via onHeaderActionsChange) while it's
+// showing every fandom in one media category — same not-a-nav-tab reasoning
+// as WorksHeaderInfo, but the header renders a live search box (instead of a
+// filter toggle) that filters the screen's already-loaded fandom list.
+export interface AllFandomsHeaderInfo {
+  title: string;
+  onGoBack: () => void;
+  searchQuery: string;
+  onSearchQueryChange: (query: string) => void;
+}
+
 // Published by AO3ListingScreen (via onHeaderActionsChange) while it's being
 // used to view someone's profile (the "profile" tab) rather than embedded in
 // Home — same shape and same reasoning as BookmarksHeaderInfo above.
@@ -115,6 +136,7 @@ interface Ao3HeaderProps {
   bookmarksHeaderInfo?: BookmarksHeaderInfo | null;
   profileHeaderInfo?: ProfileHeaderInfo | null;
   worksHeaderInfo?: WorksHeaderInfo | null;
+  allFandomsHeaderInfo?: AllFandomsHeaderInfo | null;
 }
 
 export const HEADER_CONTENT_HEIGHT = 52;
@@ -125,6 +147,7 @@ const NAV_ITEMS: { key: Ao3Tab; label: string; icon: keyof typeof Ionicons.glyph
   { key: "history", label: "History", icon: "documents-outline" },
   { key: "inbox", label: "Inbox", icon: "mail-outline" },
   { key: "bookmarks", label: "Bookmarks", icon: "bookmark-outline" },
+  { key: "fandoms", label: "Fandoms", icon: "grid-outline" },
 ];
 
 const Ao3Header: React.FC<Ao3HeaderProps> = ({
@@ -140,6 +163,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
   bookmarksHeaderInfo,
   profileHeaderInfo,
   worksHeaderInfo,
+  allFandomsHeaderInfo,
 }) => {
   const insets = useSafeAreaInsets();
   const headerHeight = HEADER_CONTENT_HEIGHT + insets.top;
@@ -232,6 +256,8 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
       profileHeaderInfo.onGoBack();
     } else if (activeTab === "works" && worksHeaderInfo?.onGoBack) {
       worksHeaderInfo.onGoBack();
+    } else if (activeTab === "allFandoms" && allFandomsHeaderInfo?.onGoBack) {
+      allFandomsHeaderInfo.onGoBack();
     } else {
       onNavigate("home");
     }
@@ -507,6 +533,28 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
               <View style={styles.avatarBtn} />
             )}
           </>
+        ) : activeTab === "allFandoms" && allFandomsHeaderInfo ? (
+          <View style={styles.searchRow}>
+            <Ionicons name="search" size={16} color="#888" style={styles.searchIcon} />
+            <TextInput
+              style={styles.searchInput}
+              value={allFandomsHeaderInfo.searchQuery}
+              onChangeText={allFandomsHeaderInfo.onSearchQueryChange}
+              placeholder={`Search ${allFandomsHeaderInfo.title}`}
+              placeholderTextColor="#777"
+              autoCorrect={false}
+              autoCapitalize="none"
+              returnKeyType="search"
+            />
+            {allFandomsHeaderInfo.searchQuery.length > 0 ? (
+              <TouchableOpacity
+                onPress={() => allFandomsHeaderInfo.onSearchQueryChange("")}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="close-circle" size={16} color="#888" />
+              </TouchableOpacity>
+            ) : null}
+          </View>
         ) : (
           <>
             <Text style={styles.headerTitle} numberOfLines={1}>
@@ -735,6 +783,28 @@ const styles = StyleSheet.create({
   },
   historyTabLabelActive: {
     color: "#000",
+  },
+  searchRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginHorizontal: 8,
+    paddingHorizontal: 10,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#1c1c1c",
+    borderWidth: 1,
+    borderColor: "#2a2a2a",
+  },
+  searchIcon: {
+    flexShrink: 0,
+  },
+  searchInput: {
+    flex: 1,
+    color: "#fff",
+    fontSize: 14,
+    paddingVertical: 0,
   },
   modalRoot: {
     flex: 1,

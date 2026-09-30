@@ -9,6 +9,8 @@ import AO3InboxScreen from "./screens/AO3InboxScreen";
 import AO3BookmarksScreen from "./screens/AO3BookmarksScreen";
 import AO3WorksScreen from "./screens/AO3WorksScreen";
 import AO3ListingScreen from "./screens/AO3ListingScreen";
+import AO3FandomsScreen from "./screens/AO3FandomsScreen";
+import AO3AllFandomsScreen from "./screens/AO3AllFandomsScreen";
 import Ao3Header, {
   Ao3Tab,
   HEADER_CONTENT_HEIGHT,
@@ -18,6 +20,7 @@ import Ao3Header, {
   BookmarksHeaderInfo,
   ProfileHeaderInfo,
   WorksHeaderInfo,
+  AllFandomsHeaderInfo,
 } from "./components/Ao3Header";
 import { AO3Link } from "./components/AO3WorkBlurb";
 import { extractUsernameFromUsersUrl } from "./api/ao3Bookmarks";
@@ -33,6 +36,7 @@ interface NavEntry {
   bookmarksUsername: string | null;
   profileUsername: string | null;
   worksUsername: string | null;
+  allFandomsCategory: { title: string; allHref: string } | null;
 }
 
 const AppContent: React.FC = () => {
@@ -42,6 +46,7 @@ const AppContent: React.FC = () => {
   const [bookmarksUsername, setBookmarksUsername] = useState<string | null>(null);
   const [profileUsername, setProfileUsername] = useState<string | null>(null);
   const [worksUsername, setWorksUsername] = useState<string | null>(null);
+  const [allFandomsCategory, setAllFandomsCategory] = useState<{ title: string; allHref: string } | null>(null);
   // Mutated directly (not state) — popping/pushing it should never itself
   // trigger a re-render; the setActiveTab/setReaderUrl/etc. calls around it
   // already do that. Kept in a ref (rather than plain state) specifically so
@@ -54,6 +59,7 @@ const AppContent: React.FC = () => {
   const [bookmarksHeaderInfo, setBookmarksHeaderInfo] = useState<BookmarksHeaderInfo | null>(null);
   const [profileHeaderInfo, setProfileHeaderInfo] = useState<ProfileHeaderInfo | null>(null);
   const [worksHeaderInfo, setWorksHeaderInfo] = useState<WorksHeaderInfo | null>(null);
+  const [allFandomsHeaderInfo, setAllFandomsHeaderInfo] = useState<AllFandomsHeaderInfo | null>(null);
   const insets = useSafeAreaInsets();
   const headerHeight = HEADER_CONTENT_HEIGHT + insets.top;
 
@@ -82,7 +88,14 @@ const AppContent: React.FC = () => {
   // navigation away from it — shared by openReader/openBookmarks/openProfile
   // below so `goBack` can later return to this exact screen.
   const pushNavHistory = () => {
-    navHistoryRef.current.push({ tab: activeTab, readerUrl, bookmarksUsername, profileUsername, worksUsername });
+    navHistoryRef.current.push({
+      tab: activeTab,
+      readerUrl,
+      bookmarksUsername,
+      profileUsername,
+      worksUsername,
+      allFandomsCategory,
+    });
   };
 
   // Shared by HomeScreen and AO3HistoryScreen's work-card press handlers:
@@ -137,6 +150,15 @@ const AppContent: React.FC = () => {
     setActiveTab("works");
   };
 
+  // Called when a Fandoms category's "All X..." button is tapped — opens the
+  // in-app paginated/searchable listing of every fandom in that category
+  // instead of the external browser.
+  const openAllFandoms = (category: { title: string; allHref: string }) => {
+    pushNavHistory();
+    setAllFandomsCategory(category);
+    setActiveTab("allFandoms");
+  };
+
   // Drawer nav items (Home/Reader/History/Inbox/Bookmarks) are top-level
   // destinations reached via the menu rather than by drilling into content —
   // treated as a fresh start, so they reset the back stack instead of adding
@@ -175,6 +197,7 @@ const AppContent: React.FC = () => {
     else if (entry.tab === "bookmarks") setBookmarksUsername(entry.bookmarksUsername);
     else if (entry.tab === "profile") setProfileUsername(entry.profileUsername);
     else if (entry.tab === "works") setWorksUsername(entry.worksUsername);
+    else if (entry.tab === "allFandoms") setAllFandomsCategory(entry.allFandomsCategory);
   }, []);
 
   if (loading) {
@@ -265,6 +288,25 @@ const AppContent: React.FC = () => {
           contentContainerTopPadding={headerHeight}
           onHeaderActionsChange={setProfileHeaderInfo}
         />
+      ) : activeTab === "fandoms" ? (
+        <AO3FandomsScreen
+          onScroll={handleScroll}
+          contentContainerTopPadding={headerHeight}
+          onOpenAllFandoms={openAllFandoms}
+        />
+      ) : activeTab === "allFandoms" ? (
+        <AO3AllFandomsScreen
+          // Remount per category so switching which one we're browsing
+          // resets pagination/search/scroll cleanly, the same way
+          // Bookmarks/Profile/Works remount per user.
+          key={allFandomsCategory?.allHref ?? "no-category"}
+          title={allFandomsCategory?.title ?? "Fandoms"}
+          allHref={allFandomsCategory?.allHref ?? ""}
+          onClose={goBack}
+          onScroll={handleScroll}
+          contentContainerTopPadding={headerHeight}
+          onHeaderActionsChange={setAllFandomsHeaderInfo}
+        />
       ) : activeTab === "works" ? (
         <AO3WorksScreen
           // Remount per user so switching whose works we're viewing resets
@@ -299,6 +341,7 @@ const AppContent: React.FC = () => {
       <Ao3Header
         username={username}
         activeTab={activeTab}
+        title={activeTab === "fandoms" ? "Fandoms" : undefined}
         onNavigate={navigateFromDrawer}
         onLogout={logout}
         readerHeaderInfo={readerHeaderInfo}
@@ -307,6 +350,7 @@ const AppContent: React.FC = () => {
         bookmarksHeaderInfo={bookmarksHeaderInfo}
         profileHeaderInfo={profileHeaderInfo}
         worksHeaderInfo={worksHeaderInfo}
+        allFandomsHeaderInfo={allFandomsHeaderInfo}
         scrollY={scrollY}
       />
     </View>
