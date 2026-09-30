@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
-  Linking,
   NativeScrollEvent,
   NativeSyntheticEvent,
   StyleSheet,
@@ -12,6 +11,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { AllFandomsHeaderInfo } from "../components/Ao3Header";
+import { AO3Link } from "../components/AO3WorkBlurb";
 import { AO3FandomTag, fetchAllFandomsInCategory } from "../api/ao3Fandoms";
 
 interface Props {
@@ -21,6 +21,8 @@ interface Props {
   onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
   contentContainerTopPadding?: number;
   onHeaderActionsChange?: (info: AllFandomsHeaderInfo | null) => void;
+  // Opens the in-app works listing for a single fandom tag (AO3TagWorksScreen).
+  onPressTag: (tag: AO3Link) => void;
 }
 
 // AO3 renders an entire media category's fandom list on a single (often
@@ -42,9 +44,18 @@ const ROW_HEIGHT = 44;
 // back a fresh array but reuse the same per-fandom objects (see the comment
 // on parseFandomTagsChunked), rows already on screen skip re-rendering
 // entirely while later chunks keep loading in the background.
-const FandomRow = React.memo(function FandomRow({ item }: { item: AO3FandomTag }) {
+const FandomRow = React.memo(function FandomRow({
+  item,
+  onPressTag,
+}: {
+  item: AO3FandomTag;
+  onPressTag: (tag: AO3Link) => void;
+}) {
   return (
-    <TouchableOpacity style={styles.row} onPress={() => Linking.openURL(item.href)}>
+    <TouchableOpacity
+      style={styles.row}
+      onPress={() => onPressTag({ label: item.name, href: item.href })}
+    >
       <Text style={styles.rowText} numberOfLines={1}>
         {item.name}
       </Text>
@@ -62,6 +73,7 @@ const AO3AllFandomsScreen: React.FC<Props> = ({
   onScroll,
   contentContainerTopPadding = 0,
   onHeaderActionsChange,
+  onPressTag,
 }) => {
   const [allFandoms, setAllFandoms] = useState<AO3FandomTag[]>([]);
   const [loading, setLoading] = useState(true);
@@ -127,7 +139,10 @@ const AO3AllFandomsScreen: React.FC<Props> = ({
   const goToPrevPage = () => setPage((p) => Math.max(1, p - 1));
   const goToNextPage = () => setPage((p) => Math.min(totalPages, p + 1));
 
-  const renderItem = useCallback(({ item }: { item: AO3FandomTag }) => <FandomRow item={item} />, []);
+  const renderItem = useCallback(
+    ({ item }: { item: AO3FandomTag }) => <FandomRow item={item} onPressTag={onPressTag} />,
+    [onPressTag],
+  );
 
   const getItemLayout = useCallback(
     (_data: ArrayLike<AO3FandomTag> | null | undefined, index: number) => ({

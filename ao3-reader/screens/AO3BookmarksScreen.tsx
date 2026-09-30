@@ -67,6 +67,10 @@ interface Props {
   // browser. Distinct from BookmarkOwnerCard's "Bookmarked by X" byline,
   // which navigates to that person's bookmarks page instead.
   onPressAuthor?: (author: AO3Link) => void;
+  // Called when a fandom/relationship/character/freeform/warning tag chip is
+  // tapped, so the caller can open that tag's own works listing in-app
+  // instead of the external browser.
+  onPressTag?: (tag: AO3Link) => void;
   // Forwarded straight to the FlatList's onScroll so a parent (e.g. the
   // app's collapsible header) can track this screen's scroll position.
   onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
@@ -422,10 +426,10 @@ const BOOKMARKS_INJECTED_JS = `
         summary: notes || undefined,
         fandoms: fandomLinks.length ? fandomLinks : undefined,
         tags: {
-          warnings: commaTags.warnings.length ? commaTags.warnings.map(function(tag) { return tag.label; }) : undefined,
-          relationships: commaTags.relationships.length ? commaTags.relationships.map(function(tag) { return tag.label; }) : undefined,
-          characters: commaTags.characters.length ? commaTags.characters.map(function(tag) { return tag.label; }) : undefined,
-          freeforms: commaTags.freeforms.length ? commaTags.freeforms.map(function(tag) { return tag.label; }) : undefined,
+          warnings: commaTags.warnings.length ? commaTags.warnings : undefined,
+          relationships: commaTags.relationships.length ? commaTags.relationships : undefined,
+          characters: commaTags.characters.length ? commaTags.characters : undefined,
+          freeforms: commaTags.freeforms.length ? commaTags.freeforms : undefined,
         },
         stats: {
           language: stats.language,
@@ -532,6 +536,7 @@ const AO3BookmarksScreen: React.FC<Props> = ({
   onClose,
   onWorkPress,
   onPressAuthor,
+  onPressTag,
   onScroll,
   topInset = 0,
   onHeaderActionsChange,
@@ -790,6 +795,7 @@ const AO3BookmarksScreen: React.FC<Props> = ({
           bookmark={item}
           onPressWork={onWorkPress ? () => onWorkPress(item) : undefined}
           onPressAuthor={onPressAuthor}
+          onPressTag={onPressTag}
         />
         <BookmarkOwnerCard
           bookmark={item}
@@ -802,7 +808,7 @@ const AO3BookmarksScreen: React.FC<Props> = ({
         />
       </View>
     ),
-    [onWorkPress, onPressAuthor, isOwnUser, removingIds, handleEdit, handleDelete, handleAddToCollection, handleShare],
+    [onWorkPress, onPressAuthor, onPressTag, isOwnUser, removingIds, handleEdit, handleDelete, handleAddToCollection, handleShare],
   );
 
   const listEmptyComponent = useMemo(

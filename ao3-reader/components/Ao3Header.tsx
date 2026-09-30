@@ -27,7 +27,8 @@ export type Ao3Tab =
   | "profile"
   | "works"
   | "fandoms"
-  | "allFandoms";
+  | "allFandoms"
+  | "tagWorks";
 
 // Published by FanficReader (via onHeaderActionsChange) while the Reader tab
 // is active, so Ao3Header can render the fic/chapter title and the
@@ -90,6 +91,17 @@ export interface WorksHeaderInfo {
   onToggleFilters: () => void;
 }
 
+// Published by AO3TagWorksScreen (via onHeaderActionsChange) while it's
+// showing every work tagged with a given fandom/relationship/character/
+// freeform/warning tag — same not-a-nav-tab reasoning and shape as
+// WorksHeaderInfo (reached by tapping a tag chip anywhere in the app, not
+// via the drawer).
+export interface TagWorksHeaderInfo {
+  title: string;
+  onGoBack: () => void;
+  onToggleFilters: () => void;
+}
+
 // Published by AO3AllFandomsScreen (via onHeaderActionsChange) while it's
 // showing every fandom in one media category — same not-a-nav-tab reasoning
 // as WorksHeaderInfo, but the header renders a live search box (instead of a
@@ -137,6 +149,7 @@ interface Ao3HeaderProps {
   profileHeaderInfo?: ProfileHeaderInfo | null;
   worksHeaderInfo?: WorksHeaderInfo | null;
   allFandomsHeaderInfo?: AllFandomsHeaderInfo | null;
+  tagWorksHeaderInfo?: TagWorksHeaderInfo | null;
 }
 
 export const HEADER_CONTENT_HEIGHT = 52;
@@ -164,6 +177,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
   profileHeaderInfo,
   worksHeaderInfo,
   allFandomsHeaderInfo,
+  tagWorksHeaderInfo,
 }) => {
   const insets = useSafeAreaInsets();
   const headerHeight = HEADER_CONTENT_HEIGHT + insets.top;
@@ -258,6 +272,8 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
       worksHeaderInfo.onGoBack();
     } else if (activeTab === "allFandoms" && allFandomsHeaderInfo?.onGoBack) {
       allFandomsHeaderInfo.onGoBack();
+    } else if (activeTab === "tagWorks" && tagWorksHeaderInfo?.onGoBack) {
+      tagWorksHeaderInfo.onGoBack();
     } else {
       onNavigate("home");
     }
@@ -510,6 +526,19 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
             </Text>
             <TouchableOpacity
               onPress={worksHeaderInfo.onToggleFilters}
+              style={styles.avatarBtn}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="options-outline" size={22} color="#fff" />
+            </TouchableOpacity>
+          </>
+        ) : activeTab === "tagWorks" && tagWorksHeaderInfo ? (
+          <>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {tagWorksHeaderInfo.title || "Works"}
+            </Text>
+            <TouchableOpacity
+              onPress={tagWorksHeaderInfo.onToggleFilters}
               style={styles.avatarBtn}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >

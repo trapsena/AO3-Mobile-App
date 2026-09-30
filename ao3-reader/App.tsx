@@ -11,6 +11,7 @@ import AO3WorksScreen from "./screens/AO3WorksScreen";
 import AO3ListingScreen from "./screens/AO3ListingScreen";
 import AO3FandomsScreen from "./screens/AO3FandomsScreen";
 import AO3AllFandomsScreen from "./screens/AO3AllFandomsScreen";
+import AO3TagWorksScreen from "./screens/AO3TagWorksScreen";
 import Ao3Header, {
   Ao3Tab,
   HEADER_CONTENT_HEIGHT,
@@ -21,6 +22,7 @@ import Ao3Header, {
   ProfileHeaderInfo,
   WorksHeaderInfo,
   AllFandomsHeaderInfo,
+  TagWorksHeaderInfo,
 } from "./components/Ao3Header";
 import { AO3Link } from "./components/AO3WorkBlurb";
 import { extractUsernameFromUsersUrl } from "./api/ao3Bookmarks";
@@ -37,6 +39,7 @@ interface NavEntry {
   profileUsername: string | null;
   worksUsername: string | null;
   allFandomsCategory: { title: string; allHref: string } | null;
+  tagWorksTag: AO3Link | null;
 }
 
 const AppContent: React.FC = () => {
@@ -47,6 +50,7 @@ const AppContent: React.FC = () => {
   const [profileUsername, setProfileUsername] = useState<string | null>(null);
   const [worksUsername, setWorksUsername] = useState<string | null>(null);
   const [allFandomsCategory, setAllFandomsCategory] = useState<{ title: string; allHref: string } | null>(null);
+  const [tagWorksTag, setTagWorksTag] = useState<AO3Link | null>(null);
   // Mutated directly (not state) — popping/pushing it should never itself
   // trigger a re-render; the setActiveTab/setReaderUrl/etc. calls around it
   // already do that. Kept in a ref (rather than plain state) specifically so
@@ -60,6 +64,7 @@ const AppContent: React.FC = () => {
   const [profileHeaderInfo, setProfileHeaderInfo] = useState<ProfileHeaderInfo | null>(null);
   const [worksHeaderInfo, setWorksHeaderInfo] = useState<WorksHeaderInfo | null>(null);
   const [allFandomsHeaderInfo, setAllFandomsHeaderInfo] = useState<AllFandomsHeaderInfo | null>(null);
+  const [tagWorksHeaderInfo, setTagWorksHeaderInfo] = useState<TagWorksHeaderInfo | null>(null);
   const insets = useSafeAreaInsets();
   const headerHeight = HEADER_CONTENT_HEIGHT + insets.top;
 
@@ -95,6 +100,7 @@ const AppContent: React.FC = () => {
       profileUsername,
       worksUsername,
       allFandomsCategory,
+      tagWorksTag,
     });
   };
 
@@ -159,6 +165,19 @@ const AppContent: React.FC = () => {
     setActiveTab("allFandoms");
   };
 
+  // Called when a fandom/relationship/character/freeform/warning tag chip
+  // (on a work/bookmark card, anywhere in the app) is tapped — navigates to
+  // that tag's own works listing in-app instead of the external browser.
+  const openTagWorks = (tag?: AO3Link) => {
+    if (!tag?.href) {
+      console.warn("[App] openTagWorks called without a resolvable href, ignoring:", tag);
+      return;
+    }
+    pushNavHistory();
+    setTagWorksTag(tag);
+    setActiveTab("tagWorks");
+  };
+
   // Drawer nav items (Home/Reader/History/Inbox/Bookmarks) are top-level
   // destinations reached via the menu rather than by drilling into content —
   // treated as a fresh start, so they reset the back stack instead of adding
@@ -198,6 +217,7 @@ const AppContent: React.FC = () => {
     else if (entry.tab === "profile") setProfileUsername(entry.profileUsername);
     else if (entry.tab === "works") setWorksUsername(entry.worksUsername);
     else if (entry.tab === "allFandoms") setAllFandomsCategory(entry.allFandomsCategory);
+    else if (entry.tab === "tagWorks") setTagWorksTag(entry.tagWorksTag);
   }, []);
 
   if (loading) {
@@ -235,6 +255,7 @@ const AppContent: React.FC = () => {
           onPressBookmarker={openBookmarks}
           onPressWorks={openWorks}
           onPressAuthor={openProfile}
+          onPressTag={openTagWorks}
         />
       ) : activeTab === "history" ? (
         <AO3HistoryScreen
@@ -242,6 +263,7 @@ const AppContent: React.FC = () => {
           onClose={goBack}
           onWorkPress={(work) => openReader(work.workUrl)}
           onPressAuthor={openProfile}
+          onPressTag={openTagWorks}
           onScroll={handleScroll}
           contentContainerTopPadding={headerHeight}
           onHeaderActionsChange={setHistoryHeaderInfo}
@@ -267,6 +289,7 @@ const AppContent: React.FC = () => {
           onClose={goBack}
           onWorkPress={(bookmark) => openReader(bookmark.workUrl)}
           onPressAuthor={openProfile}
+          onPressTag={openTagWorks}
           onScroll={handleScroll}
           topInset={headerHeight}
           onHeaderActionsChange={setBookmarksHeaderInfo}
@@ -282,6 +305,7 @@ const AppContent: React.FC = () => {
           onPressBookmarker={openBookmarks}
           onPressWorks={openWorks}
           onPressAuthor={openProfile}
+          onPressTag={openTagWorks}
           currentUsername={username}
           onClose={goBack}
           onScroll={handleScroll}
@@ -293,6 +317,7 @@ const AppContent: React.FC = () => {
           onScroll={handleScroll}
           contentContainerTopPadding={headerHeight}
           onOpenAllFandoms={openAllFandoms}
+          onPressTag={openTagWorks}
         />
       ) : activeTab === "allFandoms" ? (
         <AO3AllFandomsScreen
@@ -306,6 +331,7 @@ const AppContent: React.FC = () => {
           onScroll={handleScroll}
           contentContainerTopPadding={headerHeight}
           onHeaderActionsChange={setAllFandomsHeaderInfo}
+          onPressTag={openTagWorks}
         />
       ) : activeTab === "works" ? (
         <AO3WorksScreen
@@ -316,9 +342,25 @@ const AppContent: React.FC = () => {
           onClose={goBack}
           onWorkPress={(work) => openReader(work.workUrl)}
           onPressAuthor={openProfile}
+          onPressTag={openTagWorks}
           onScroll={handleScroll}
           contentContainerTopPadding={headerHeight}
           onHeaderActionsChange={setWorksHeaderInfo}
+        />
+      ) : activeTab === "tagWorks" ? (
+        <AO3TagWorksScreen
+          // Remount per tag so switching which tag we're browsing resets
+          // pagination/scroll cleanly, the same way Bookmarks/Profile/Works
+          // remount per user.
+          key={tagWorksTag?.href ?? "no-tag"}
+          tag={tagWorksTag ?? { label: "Works", href: "" }}
+          onClose={goBack}
+          onWorkPress={(work) => openReader(work.workUrl)}
+          onPressAuthor={openProfile}
+          onPressTag={openTagWorks}
+          onScroll={handleScroll}
+          contentContainerTopPadding={headerHeight}
+          onHeaderActionsChange={setTagWorksHeaderInfo}
         />
       ) : (
         <FanficReader
@@ -351,6 +393,7 @@ const AppContent: React.FC = () => {
         profileHeaderInfo={profileHeaderInfo}
         worksHeaderInfo={worksHeaderInfo}
         allFandomsHeaderInfo={allFandomsHeaderInfo}
+        tagWorksHeaderInfo={tagWorksHeaderInfo}
         scrollY={scrollY}
       />
     </View>

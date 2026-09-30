@@ -38,10 +38,10 @@ export interface AO3WorkStats {
 }
 
 export interface AO3WorkTagGroups {
-  warnings?: string[];
-  relationships?: string[];
-  characters?: string[];
-  freeforms?: string[];
+  warnings?: AO3Link[];
+  relationships?: AO3Link[];
+  characters?: AO3Link[];
+  freeforms?: AO3Link[];
 }
 
 export interface AO3RequiredTags {
@@ -410,23 +410,36 @@ const renderLinkList = (
   );
 };
 
-const renderStringList = (
-  items?: Array<{ label: string; tone: "muted" | "warning" | "accent" }>,
+// Same comma-separated inline layout as renderCommaLinkList, but for the
+// combined warnings+relationships+characters+freeforms flow, where each item
+// can come from a different group and needs that group passed back through
+// onPressTag (e.g. a relationship/"shipping" tag opens its own works listing
+// the same way a fandom tag already does).
+const renderGroupedCommaLinks = (
+  items: Array<{ link: AO3Link; tone: "muted" | "warning" | "accent"; group: AO3TagGroup }>,
+  onPressTag?: (tag: AO3Link, group: AO3TagGroup) => void,
 ) => {
-  if (!items || items.length === 0) return null;
+  if (items.length === 0) return null;
 
   return (
     <Text style={styles.commaTagsRow}>
-      {items.map((item, index) => (
-        <React.Fragment key={`${item.label}-${index}`}>
+      {items.map(({ link, tone, group }, index) => (
+        <React.Fragment key={`${link.label}-${index}`}>
           <Text
             style={[
               styles.commaTagText,
-              item.tone === "warning" && styles.commaTagTextWarning,
-              item.tone === "accent" && styles.commaTagTextAccent,
+              tone === "warning" && styles.commaTagTextWarning,
+              tone === "accent" && styles.commaTagTextAccent,
             ]}
+            onPress={
+              onPressTag
+                ? () => onPressTag(link, group)
+                : link.href
+                  ? () => openUrl(link.href)
+                  : undefined
+            }
           >
-            {item.label}
+            {link.label}
           </Text>
           {index < items.length - 1 ? <Text style={styles.commaTagSeparator}>, </Text> : null}
         </React.Fragment>
@@ -504,11 +517,11 @@ const AO3WorkBlurb: React.FC<Props> = ({ kind = "work", work, bookmark, series, 
   const tags = data.tags;
   const fandoms = data.fandoms;
   const extraBadges = data.extraBadges;
-  const commaTags = [
-    ...(tags?.warnings ?? []).map((label) => ({ label, tone: "warning" as const })),
-    ...(tags?.relationships ?? []).map((label) => ({ label, tone: "muted" as const })),
-    ...(tags?.characters ?? []).map((label) => ({ label, tone: "muted" as const })),
-    ...(tags?.freeforms ?? []).map((label) => ({ label, tone: "muted" as const })),
+  const commaTagItems: Array<{ link: AO3Link; tone: "muted" | "warning"; group: AO3TagGroup }> = [
+    ...(tags?.warnings ?? []).map((link) => ({ link, tone: "warning" as const, group: "warnings" as const })),
+    ...(tags?.relationships ?? []).map((link) => ({ link, tone: "muted" as const, group: "relationships" as const })),
+    ...(tags?.characters ?? []).map((link) => ({ link, tone: "muted" as const, group: "characters" as const })),
+    ...(tags?.freeforms ?? []).map((link) => ({ link, tone: "muted" as const, group: "freeforms" as const })),
   ];
 
   return (
@@ -570,12 +583,9 @@ const AO3WorkBlurb: React.FC<Props> = ({ kind = "work", work, bookmark, series, 
         {status ? <TagPill label={status.label} tone={isBookmark ? "accent" : "muted"} onPress={status.href ? () => openUrl(status.href) : onPressTag ? () => onPressTag(status, "status") : undefined} /> : null}
       </View>
 
-      {tags?.warnings?.length ||
-      tags?.relationships?.length ||
-      tags?.characters?.length ||
-      tags?.freeforms?.length ? (
+      {commaTagItems.length > 0 ? (
         <View style={styles.tagsSection}>
-          {renderStringList(commaTags)}
+          {renderGroupedCommaLinks(commaTagItems, onPressTag)}
         </View>
       ) : null}
 

@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
-  Linking,
   NativeScrollEvent,
   NativeSyntheticEvent,
   RefreshControl,
@@ -12,23 +11,31 @@ import {
   View,
 } from "react-native";
 import { AO3FandomCategory, fetchFandomCategories } from "../api/ao3Fandoms";
+import { AO3Link } from "../components/AO3WorkBlurb";
 
 interface Props {
   onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
   contentContainerTopPadding?: number;
   // Opens the in-app full listing for one category (AO3AllFandomsScreen) —
-  // that page is paginated/searchable, unlike a single fandom's own tag page
-  // which still just opens externally via Linking.openURL below.
+  // a much bigger destination than a single fandom's own tag page.
   onOpenAllFandoms: (category: { title: string; allHref: string }) => void;
+  // Opens the in-app works listing for a single fandom tag (AO3TagWorksScreen)
+  // — a fandom's href already points straight at AO3's own `/tags/<fandom>/works`,
+  // the same shape every other tag chip in this app already navigates with.
+  onPressTag: (tag: AO3Link) => void;
 }
 
 // AO3's own "Fandoms" index (archiveofourown.org/media) — 11 media
 // categories, each showing its 5 most popular fandoms plus a link to browse
-// every fandom in that category. Tapping a fandom opens AO3's own page for it
-// externally, matching how every other tag link in this app (e.g. the
-// profile's own Fandoms box) already behaves; "All X..." opens the in-app
-// full listing instead.
-const AO3FandomsScreen: React.FC<Props> = ({ onScroll, contentContainerTopPadding = 0, onOpenAllFandoms }) => {
+// every fandom in that category. Tapping a fandom opens its works listing
+// in-app (same destination every other tag chip in the app uses); "All X..."
+// opens the in-app full alphabetical listing instead.
+const AO3FandomsScreen: React.FC<Props> = ({
+  onScroll,
+  contentContainerTopPadding = 0,
+  onOpenAllFandoms,
+  onPressTag,
+}) => {
   const [categories, setCategories] = useState<AO3FandomCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -93,7 +100,7 @@ const AO3FandomsScreen: React.FC<Props> = ({ onScroll, contentContainerTopPaddin
                   <TouchableOpacity
                     key={`${fandom.name}-${index}`}
                     style={styles.fandomPill}
-                    onPress={() => Linking.openURL(fandom.href)}
+                    onPress={() => onPressTag({ label: fandom.name, href: fandom.href })}
                   >
                     <Text style={styles.fandomPillText} numberOfLines={1}>
                       {fandom.name}

@@ -21,6 +21,9 @@ interface Props {
   // Called when a work/bookmark card's author byline is tapped, so the
   // caller can open that author's profile in-app.
   onPressAuthor?: (author: AO3Link) => void;
+  // Called when a fandom/relationship/character/freeform/warning tag chip is
+  // tapped, so the caller can open that tag's own works listing in-app.
+  onPressTag?: (tag: AO3Link) => void;
 }
 
 const HomeScreen: React.FC<Props> = ({
@@ -31,6 +34,7 @@ const HomeScreen: React.FC<Props> = ({
   onPressBookmarker,
   onPressWorks,
   onPressAuthor,
+  onPressTag,
 }) => {
   if (!username) {
     return (
@@ -63,6 +67,7 @@ const HomeScreen: React.FC<Props> = ({
         onPressBookmarker={onPressBookmarker}
         onPressWorks={onPressWorks}
         onPressAuthor={onPressAuthor}
+        onPressTag={onPressTag}
         currentUsername={username}
       />
     </View>

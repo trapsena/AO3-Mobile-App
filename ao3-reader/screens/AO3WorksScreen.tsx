@@ -57,6 +57,10 @@ interface Props {
   // Called when a work card's author byline is tapped, so the caller can
   // open that author's profile in-app instead of the external browser.
   onPressAuthor?: (author: AO3Link) => void;
+  // Called when a fandom/relationship/character/freeform/warning tag chip is
+  // tapped, so the caller can open that tag's own works listing in-app
+  // instead of the external browser.
+  onPressTag?: (tag: AO3Link) => void;
   // Forwarded straight to the FlatList's onScroll so a parent (e.g. the
   // app's collapsible header) can track this screen's scroll position.
   onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
@@ -333,10 +337,10 @@ const WORKS_INJECTED_JS = `
         author: authorLink ? { label: text(authorLink), href: abs(authorLink.getAttribute("href")) || undefined } : undefined,
         fandoms: fandomLinks.length ? fandomLinks : undefined,
         tags: {
-          warnings: commaTags.warnings.length ? commaTags.warnings.map(function(t) { return t.label; }) : undefined,
-          relationships: commaTags.relationships.length ? commaTags.relationships.map(function(t) { return t.label; }) : undefined,
-          characters: commaTags.characters.length ? commaTags.characters.map(function(t) { return t.label; }) : undefined,
-          freeforms: commaTags.freeforms.length ? commaTags.freeforms.map(function(t) { return t.label; }) : undefined,
+          warnings: commaTags.warnings.length ? commaTags.warnings : undefined,
+          relationships: commaTags.relationships.length ? commaTags.relationships : undefined,
+          characters: commaTags.characters.length ? commaTags.characters : undefined,
+          freeforms: commaTags.freeforms.length ? commaTags.freeforms : undefined,
         },
         rating: required.rating,
         warnings: required.warnings,
@@ -450,6 +454,7 @@ const AO3WorksScreen: React.FC<Props> = ({
   onClose,
   onWorkPress,
   onPressAuthor,
+  onPressTag,
   onScroll,
   contentContainerTopPadding = 0,
   onHeaderActionsChange,
@@ -615,10 +620,11 @@ const AO3WorksScreen: React.FC<Props> = ({
           work={item}
           onPressWork={onWorkPress ? () => onWorkPress(item) : undefined}
           onPressAuthor={onPressAuthor}
+          onPressTag={onPressTag}
         />
       </View>
     ),
-    [onWorkPress, onPressAuthor],
+    [onWorkPress, onPressAuthor, onPressTag],
   );
 
   const listEmptyComponent = useMemo(

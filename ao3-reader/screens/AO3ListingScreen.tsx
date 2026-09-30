@@ -110,6 +110,10 @@ interface Props {
   // caller can open that author's profile in-app (this same screen, reused
   // for a different `url`) instead of the external browser.
   onPressAuthor?: (author: AO3Link) => void;
+  // Called when a fandom/relationship/character/freeform/warning tag chip is
+  // tapped, so the caller can open that tag's own works listing in-app
+  // instead of the external browser.
+  onPressTag?: (tag: AO3Link) => void;
   // Called when the header's back button is tapped. Only meaningful when
   // this screen is used as the standalone "profile" tab (not embedded in
   // Home, which has no back button and never passes this).
@@ -315,10 +319,10 @@ const LISTING_INJECTED_JS = `
         author: authorLink ? { label: text(authorLink), href: abs(authorLink.getAttribute("href")) || undefined } : undefined,
         fandoms: fandomLinks.length ? fandomLinks : undefined,
         tags: {
-          warnings: commaTags.warnings.length ? commaTags.warnings.map(function(tag) { return tag.label; }) : undefined,
-          relationships: commaTags.relationships.length ? commaTags.relationships.map(function(tag) { return tag.label; }) : undefined,
-          characters: commaTags.characters.length ? commaTags.characters.map(function(tag) { return tag.label; }) : undefined,
-          freeforms: commaTags.freeforms.length ? commaTags.freeforms.map(function(tag) { return tag.label; }) : undefined,
+          warnings: commaTags.warnings.length ? commaTags.warnings : undefined,
+          relationships: commaTags.relationships.length ? commaTags.relationships : undefined,
+          characters: commaTags.characters.length ? commaTags.characters : undefined,
+          freeforms: commaTags.freeforms.length ? commaTags.freeforms : undefined,
         },
         rating: required.rating,
         warnings: required.warnings,
@@ -455,10 +459,10 @@ const LISTING_INJECTED_JS = `
         summary: notes || undefined,
         fandoms: fandomLinks.length ? fandomLinks : undefined,
         tags: {
-          warnings: commaTags.warnings.length ? commaTags.warnings.map(function(tag) { return tag.label; }) : undefined,
-          relationships: commaTags.relationships.length ? commaTags.relationships.map(function(tag) { return tag.label; }) : undefined,
-          characters: commaTags.characters.length ? commaTags.characters.map(function(tag) { return tag.label; }) : undefined,
-          freeforms: commaTags.freeforms.length ? commaTags.freeforms.map(function(tag) { return tag.label; }) : undefined,
+          warnings: commaTags.warnings.length ? commaTags.warnings : undefined,
+          relationships: commaTags.relationships.length ? commaTags.relationships : undefined,
+          characters: commaTags.characters.length ? commaTags.characters : undefined,
+          freeforms: commaTags.freeforms.length ? commaTags.freeforms : undefined,
         },
         stats: {
           language: stats.language,
@@ -494,10 +498,10 @@ const LISTING_INJECTED_JS = `
         author: authorLink ? { label: text(authorLink), href: abs(authorLink.getAttribute("href")) || undefined } : undefined,
         fandoms: fandomLinks.length ? fandomLinks : undefined,
         tags: {
-          warnings: commaTags.warnings.length ? commaTags.warnings.map(function(tag) { return tag.label; }) : undefined,
-          relationships: commaTags.relationships.length ? commaTags.relationships.map(function(tag) { return tag.label; }) : undefined,
-          characters: commaTags.characters.length ? commaTags.characters.map(function(tag) { return tag.label; }) : undefined,
-          freeforms: commaTags.freeforms.length ? commaTags.freeforms.map(function(tag) { return tag.label; }) : undefined,
+          warnings: commaTags.warnings.length ? commaTags.warnings : undefined,
+          relationships: commaTags.relationships.length ? commaTags.relationships : undefined,
+          characters: commaTags.characters.length ? commaTags.characters : undefined,
+          freeforms: commaTags.freeforms.length ? commaTags.freeforms : undefined,
         },
         rating: required.rating,
         warnings: required.warnings,
@@ -681,6 +685,7 @@ const AO3ListingScreen: React.FC<Props> = ({
   onPressWorks,
   currentUsername,
   onPressAuthor,
+  onPressTag,
   onClose,
   onHeaderActionsChange,
 }) => {
@@ -1092,6 +1097,7 @@ const AO3ListingScreen: React.FC<Props> = ({
                 // (AO3WorkBlurb's own default fallback for an unhandled press).
                 onPressWork={entry.kind !== "series" && onItemPress ? handlePressWork : undefined}
                 onPressAuthor={onPressAuthor}
+                onPressTag={onPressTag}
               />
 
               {entry.kind === "bookmark" && entry.bookmark ? (
