@@ -31,6 +31,30 @@ interface Props {
 // list rather than re-hitting AO3.
 const PAGE_SIZE = 200;
 
+// Matches the `row` style below (paddingVertical 12 * 2 + ~19px text line +
+// 1px border) — a fixed height lets FlatList skip per-cell layout
+// measurement via getItemLayout, which is the main fix for VirtualizedList's
+// "slow to update" warning on a list this size.
+const ROW_HEIGHT = 44;
+
+// Memoized so a row only re-renders when ITS OWN fandom object changes
+// identity — since fetchAllFandomsInCategory's progress chunks each hand
+// back a fresh array but reuse the same per-fandom objects (see the comment
+// on parseFandomTagsChunked), rows already on screen skip re-rendering
+// entirely while later chunks keep loading in the background.
+const FandomRow = React.memo(function FandomRow({ item }: { item: AO3FandomTag }) {
+  return (
+    <TouchableOpacity style={styles.row} onPress={() => Linking.openURL(item.href)}>
+      <Text style={styles.rowText} numberOfLines={1}>
+        {item.name}
+      </Text>
+      {typeof item.count === "number" ? (
+        <Text style={styles.rowCount}>{item.count.toLocaleString()}</Text>
+      ) : null}
+    </TouchableOpacity>
+  );
+});
+
 const AO3AllFandomsScreen: React.FC<Props> = ({
   title,
   allHref,
@@ -103,17 +127,14 @@ const AO3AllFandomsScreen: React.FC<Props> = ({
   const goToPrevPage = () => setPage((p) => Math.max(1, p - 1));
   const goToNextPage = () => setPage((p) => Math.min(totalPages, p + 1));
 
-  const renderItem = useCallback(
-    ({ item }: { item: AO3FandomTag }) => (
-      <TouchableOpacity style={styles.row} onPress={() => Linking.openURL(item.href)}>
-        <Text style={styles.rowText} numberOfLines={1}>
-          {item.name}
-        </Text>
-        {typeof item.count === "number" ? (
-          <Text style={styles.rowCount}>{item.count.toLocaleString()}</Text>
-        ) : null}
-      </TouchableOpacity>
-    ),
+  const renderItem = useCallback(({ item }: { item: AO3FandomTag }) => <FandomRow item={item} />, []);
+
+  const getItemLayout = useCallback(
+    (_data: ArrayLike<AO3FandomTag> | null | undefined, index: number) => ({
+      length: ROW_HEIGHT,
+      offset: ROW_HEIGHT * index,
+      index,
+    }),
     [],
   );
 
@@ -135,6 +156,7 @@ const AO3AllFandomsScreen: React.FC<Props> = ({
         data={pageItems}
         keyExtractor={(item, index) => `${item.href}-${index}`}
         renderItem={renderItem}
+        getItemLayout={getItemLayout}
         contentContainerStyle={[styles.content, { paddingTop: contentContainerTopPadding + 16 }]}
         onScroll={onScroll}
         scrollEventThrottle={16}

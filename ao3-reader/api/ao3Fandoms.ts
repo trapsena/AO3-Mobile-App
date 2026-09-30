@@ -105,7 +105,13 @@ function parseFandomTagsChunked(
         processed++;
       }
       const done = m === null;
-      onProgress(results, done);
+      // A fresh copy, not `results` itself — `results` is the same mutable
+      // array across every chunk, and React's setState bails out re-rendering
+      // when given a value that's Object.is-identical to the current state,
+      // so passing the same reference on every call would collapse all the
+      // "progressive" updates into a single big one whenever some other
+      // state change (e.g. `done` flipping) finally forces a re-render.
+      onProgress(results.slice(), done);
       if (done) {
         resolve(results);
       } else {
