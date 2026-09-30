@@ -23,6 +23,17 @@ interface Props {
   // a parent can drive scroll-linked UI, e.g. the app's collapsible header,
   // the same way it would from a native ScrollView/FlatList's onScroll.
   onScroll?: (y: number) => void;
+  // Whether the TTS controls are open. The highlight-and-scroll-into-view
+  // behavior below only makes sense while TTS is actually active — jumping
+  // to `currentIndex` (which defaults to paragraph 0, or a restored reading
+  // position) the moment a chapter loads, regardless of whether TTS is even
+  // open, auto-scrolls the WebView on every chapter open. That auto-scroll
+  // reports a non-zero offset through onScroll immediately, which makes the
+  // app's collapsible header hide itself before the person has scrolled at
+  // all — most noticeable on chapters with a Summary/Notes preface, since
+  // that pushes paragraph 0 (and the scroll distance needed to center it)
+  // further down the page.
+  ttsActive?: boolean;
 }
 
 const ChapterView: React.FC<Props> = ({
@@ -35,6 +46,7 @@ const ChapterView: React.FC<Props> = ({
   currentIndex = 0,
   onParagraphPress,
   onScroll,
+  ttsActive = false,
 }) => {
   const webRef = useRef<any>(null);
 
@@ -132,16 +144,23 @@ const ChapterView: React.FC<Props> = ({
       `<style>${css}</style></head><body>${htmlContent}</body><script>${script}</script></html>`;
   };
 
-  // whenever the currentIndex prop changes, instruct the webview to highlight
+  // Whenever the currentIndex prop changes, instruct the webview to
+  // highlight it — but only while TTS is actually active. When it's not
+  // (including on initial mount, since ttsActive defaults to false), pass
+  // -1 instead: setHighlight still clears any stale `.current` class, but
+  // never enters the `scrollIntoView` branch, since no real paragraph index
+  // matches -1. See the comment on the `ttsActive` prop above for why that
+  // scroll matters.
   useEffect(() => {
     if (!webRef.current) return;
-    const safe = `window.__setHighlight(${currentIndex});true;`;
+    const targetIndex = ttsActive ? currentIndex : -1;
+    const safe = `window.__setHighlight(${targetIndex});true;`;
     try {
       webRef.current.injectJavaScript(safe);
     } catch (e) {
       // ignore
     }
-  }, [currentIndex]);
+  }, [currentIndex, ttsActive]);
 
   const html = buildHtml();
 

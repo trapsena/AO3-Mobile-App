@@ -131,7 +131,7 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
   const toggleWithNotesOnly = useCallback(() => set("withNotesOnly", !valueRef.current.withNotesOnly), [set]);
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents={visible ? "auto" : "none"}>
+    <View style={[StyleSheet.absoluteFill, styles.overlayRoot]} pointerEvents={visible ? "auto" : "none"}>
       <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, { opacity: backdropOpacity }]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
       </Animated.View>
@@ -476,6 +476,15 @@ const ToggleRow: React.FC<{ label: string; value: boolean; onToggle: () => void 
 /* ------------------------------------------------------------------ */
 
 const styles = StyleSheet.create({
+  // The app's own header bar (Ao3Header) renders as a sibling above whichever
+  // screen is active, with zIndex/elevation 10, so it can stay pinned over
+  // the scrolling content underneath it. Without a higher stacking value of
+  // its own, this panel — nested inside that same screen — would paint
+  // behind the header instead of over it once opened.
+  overlayRoot: {
+    zIndex: 50,
+    elevation: 50,
+  },
   backdrop: {
     backgroundColor: "rgba(0,0,0,0.5)",
   },
