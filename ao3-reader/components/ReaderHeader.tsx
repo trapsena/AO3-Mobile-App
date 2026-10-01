@@ -11,10 +11,12 @@ import {
 } from "react-native";
 import Slider from "@react-native-community/slider";
 import * as Speech from "expo-speech";
+import { useFonts } from "expo-font";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { X } from "lucide-react-native";
 import CommentsDrawer from "./CommentsDrawer";
 import type { TTSProvider } from "./geminiTTS";
+import { getReaderFontNativeFamilyName, READER_FONT_OPTIONS, ReaderFontKey } from "./readerFonts";
 
 interface TTSSettings {
   provider: TTSProvider;
@@ -52,12 +54,14 @@ interface ReaderHeaderProps {
   lineSpacing: number;
   paragraphSpacing: number;
   padding: number;
+  fontFamily: ReaderFontKey;
   currentUrl?: string;
   onConfigChange: (config: {
     fontSize?: number;
     lineSpacing?: number;
     paragraphSpacing?: number;
     padding?: number;
+    fontFamily?: ReaderFontKey;
   }) => void;
 }
 
@@ -71,11 +75,23 @@ const ReaderHeader = forwardRef<ReaderHeaderHandle, ReaderHeaderProps>(({
   lineSpacing,
   paragraphSpacing,
   padding,
+  fontFamily,
   currentUrl = "",
   onConfigChange,
 }, ref) => {
   const [visible, setVisible] = useState(false);
   const [commentsVisible, setCommentsVisible] = useState(false);
+  // Loads the same bundled font files natively (independent of the WebView
+  // CSS embedding in readerFonts.ts) purely so the picker below can preview
+  // each option in its own actual typeface. Falls back to the default label
+  // styling until these finish loading.
+  const [customFontsLoaded] = useFonts({
+    ReaderNotoSerif: require("../assets/fonts/NotoSerif-VariableFont_wdth,wght.ttf"),
+    ReaderOpenSans: require("../assets/fonts/OpenSans-VariableFont_wdth,wght.ttf"),
+    ReaderQuicksand: require("../assets/fonts/Quicksand-VariableFont_wght.ttf"),
+    ReaderOpenDyslexic: require("../assets/fonts/OpenDyslexic-Regular.otf"),
+    ReaderRobotoLight: require("../assets/fonts/Roboto-Light.ttf"),
+  });
 
   useImperativeHandle(ref, () => ({
     openSettings: () => setVisible(true),
@@ -227,6 +243,37 @@ const ReaderHeader = forwardRef<ReaderHeaderHandle, ReaderHeaderProps>(({
             <ScrollView style={styles.contentContainer} showsVerticalScrollIndicator={false}>
               {activeTab === "text" && (
                 <>
+                  <View style={styles.setting}>
+                    <Text style={styles.label}>Fonte do texto</Text>
+                    <ScrollView
+                      style={styles.voicesContainer}
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                    >
+                      {READER_FONT_OPTIONS.map((option) => {
+                        const nativeFamily = getReaderFontNativeFamilyName(option.key);
+                        const active = fontFamily === option.key;
+                        return (
+                          <TouchableOpacity
+                            key={option.key}
+                            style={[styles.voiceButton, active && styles.voiceButtonActive]}
+                            onPress={() => onConfigChange({ fontFamily: option.key })}
+                          >
+                            <Text
+                              style={[
+                                styles.voiceButtonText,
+                                active && styles.voiceButtonTextActive,
+                                nativeFamily && customFontsLoaded ? { fontFamily: nativeFamily } : null,
+                              ]}
+                            >
+                              {option.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+
                   <View style={styles.setting}>
                     <Text style={styles.label}>Tamanho da fonte: {fontSize}px</Text>
                     <Slider

@@ -16,6 +16,7 @@ import ReaderHeader, { ReaderHeaderHandle } from "../components/ReaderHeader";
 import SpeechControls from "../components/SpeechControls";
 import { fetchWithSession, getSessionCookie } from "../api/ao3Auth";
 import type { ReaderHeaderInfo } from "../components/Ao3Header";
+import type { ReaderFontKey } from "../components/readerFonts";
 
 
 
@@ -279,6 +280,7 @@ const FanficReader: React.FC<Props> = ({
   const [fontSize, setFontSize] = useState(16);
   const [lineHeight, setLineHeight] = useState(24);
   const [padding, setPadding] = useState(20);
+  const [fontFamily, setFontFamily] = useState<ReaderFontKey>("system");
   const [configVisible, setConfigVisible] = useState(false);
   // TTS / leitura
   const [ttsVisible, setTtsVisible] = useState(false);
@@ -557,12 +559,14 @@ const FanficReader: React.FC<Props> = ({
         lineSpacing={lineHeight}
         paragraphSpacing={paragraphSpacing}
         padding={padding}
+        fontFamily={fontFamily}
         currentUrl={currentUrl}
         onConfigChange={(cfg) => {
           if (cfg.fontSize !== undefined) setFontSize(cfg.fontSize);
           if (cfg.lineSpacing !== undefined) setLineHeight(cfg.lineSpacing);
           if (cfg.padding !== undefined) setPadding(cfg.padding);
           if (cfg.paragraphSpacing !== undefined) setParagraphSpacing(cfg.paragraphSpacing);
+          if (cfg.fontFamily !== undefined) setFontFamily(cfg.fontFamily);
         }}
       />
 
@@ -570,11 +574,12 @@ const FanficReader: React.FC<Props> = ({
 
       <ChapterView
         htmlContent={rawContentHtml}
-        key={`${fontSize}-${lineHeight}-${padding}`}
+        key={`${fontSize}-${lineHeight}-${padding}-${fontFamily}`}
         fontSize={fontSize}
         lineHeight={lineHeight}
         paragraphSpacing={paragraphSpacing}
         padding={padding}
+        fontFamily={fontFamily}
         topInset={topInset}
         onScroll={onScroll}
         currentIndex={currentTtsIndex}

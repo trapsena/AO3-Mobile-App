@@ -1,6 +1,7 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Dimensions, StyleSheet, View } from "react-native";
 import { WebView } from "react-native-webview";
+import { getReaderFontFamilyCss, loadReaderFontFaceCss, ReaderFontKey } from "./readerFonts";
 
 interface Props {
   // raw HTML for the chapter body (innerHTML from AO3 extraction)
@@ -34,6 +35,9 @@ interface Props {
   // that pushes paragraph 0 (and the scroll distance needed to center it)
   // further down the page.
   ttsActive?: boolean;
+  // Which bundled font (see readerFonts.ts) to render the chapter text in —
+  // "system" (the default) leaves the previous plain system-font stack.
+  fontFamily?: ReaderFontKey;
 }
 
 const ChapterView: React.FC<Props> = ({
@@ -47,18 +51,36 @@ const ChapterView: React.FC<Props> = ({
   onParagraphPress,
   onScroll,
   ttsActive = false,
+  fontFamily = "system",
 }) => {
   const webRef = useRef<any>(null);
+  // Populated asynchronously (base64-embedding a font file takes a moment
+  // the first time it's picked) — see the comment on the `fontFamily` prop
+  // and readerFonts.ts for why this can't just be read synchronously here.
+  const [fontFaceCss, setFontFaceCss] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setFontFaceCss("");
+    loadReaderFontFaceCss(fontFamily).then((css) => {
+      if (!cancelled) setFontFaceCss(css);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [fontFamily]);
 
   const width = Dimensions.get("window").width;
 
   // Build full HTML with CSS and a small script to handle highlighting and clicks
   const buildHtml = () => {
     const css = `
+      ${fontFaceCss}
       * { box-sizing: border-box; }
       html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow-x: hidden; }
       body {
         color:#fff; background:#000; font-size:${fontSize}px; line-height:${lineHeight}px;
+        font-family: ${getReaderFontFamilyCss(fontFamily)};
         overflow-y: auto;
         padding-top: ${padding + topInset}px;
         padding-right: ${padding}px;
