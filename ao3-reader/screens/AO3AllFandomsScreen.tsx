@@ -13,6 +13,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { AllFandomsHeaderInfo } from "../components/Ao3Header";
 import { AO3Link } from "../components/AO3WorkBlurb";
 import { AO3FandomTag, fetchAllFandomsInCategory } from "../api/ao3Fandoms";
+import { ThemeColors, useTheme } from "../contexts/ThemeContext";
+
+type AO3AllFandomsScreenStyles = ReturnType<typeof createStyles>;
 
 interface Props {
   title: string;
@@ -47,9 +50,11 @@ const ROW_HEIGHT = 44;
 const FandomRow = React.memo(function FandomRow({
   item,
   onPressTag,
+  styles,
 }: {
   item: AO3FandomTag;
   onPressTag: (tag: AO3Link) => void;
+  styles: AO3AllFandomsScreenStyles;
 }) {
   return (
     <TouchableOpacity
@@ -75,6 +80,8 @@ const AO3AllFandomsScreen: React.FC<Props> = ({
   onHeaderActionsChange,
   onPressTag,
 }) => {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [allFandoms, setAllFandoms] = useState<AO3FandomTag[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -140,8 +147,8 @@ const AO3AllFandomsScreen: React.FC<Props> = ({
   const goToNextPage = () => setPage((p) => Math.min(totalPages, p + 1));
 
   const renderItem = useCallback(
-    ({ item }: { item: AO3FandomTag }) => <FandomRow item={item} onPressTag={onPressTag} />,
-    [onPressTag],
+    ({ item }: { item: AO3FandomTag }) => <FandomRow item={item} onPressTag={onPressTag} styles={styles} />,
+    [onPressTag, styles],
   );
 
   const getItemLayout = useCallback(
@@ -158,7 +165,7 @@ const AO3AllFandomsScreen: React.FC<Props> = ({
       <View style={[styles.container, styles.centered]}>
         <ActivityIndicator
           size="large"
-          color="#7ec14b"
+          color={colors.accent}
           style={{ marginTop: contentContainerTopPadding + 40 }}
         />
       </View>
@@ -184,7 +191,7 @@ const AO3AllFandomsScreen: React.FC<Props> = ({
               {searchQuery.trim() ? ` matching "${searchQuery.trim()}"` : ""}
               {loadingMore ? " so far…" : ""}
             </Text>
-            {loadingMore ? <ActivityIndicator size="small" color="#7ec14b" /> : null}
+            {loadingMore ? <ActivityIndicator size="small" color={colors.accent} /> : null}
           </View>
         }
         ListEmptyComponent={
@@ -200,7 +207,7 @@ const AO3AllFandomsScreen: React.FC<Props> = ({
                 onPress={goToPrevPage}
                 disabled={currentPage <= 1}
               >
-                <Ionicons name="chevron-back" size={16} color={currentPage > 1 ? "#fff" : "#555"} />
+                <Ionicons name="chevron-back" size={16} color={currentPage > 1 ? colors.text : colors.textFaint} />
               </TouchableOpacity>
 
               <Text style={styles.pageIndicatorText}>
@@ -212,7 +219,7 @@ const AO3AllFandomsScreen: React.FC<Props> = ({
                 onPress={goToNextPage}
                 disabled={currentPage >= totalPages}
               >
-                <Ionicons name="chevron-forward" size={16} color={currentPage < totalPages ? "#fff" : "#555"} />
+                <Ionicons name="chevron-forward" size={16} color={currentPage < totalPages ? colors.text : colors.textFaint} />
               </TouchableOpacity>
             </View>
           ) : null
@@ -222,10 +229,10 @@ const AO3AllFandomsScreen: React.FC<Props> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: colors.background,
   },
   centered: {
     alignItems: "center",
@@ -242,11 +249,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   countText: {
-    color: "#888",
+    color: colors.textFaint,
     fontSize: 13,
   },
   emptyText: {
-    color: "#999",
+    color: colors.textFaint,
     fontSize: 14,
     textAlign: "center",
     marginTop: 40,
@@ -258,17 +265,17 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#1c1c1c",
+    borderBottomColor: colors.border,
   },
   rowText: {
     flex: 1,
-    color: "#e0e0e0",
+    color: colors.textMuted,
     fontSize: 14,
     fontWeight: "500",
   },
   rowCount: {
     flexShrink: 0,
-    color: "#888",
+    color: colors.textFaint,
     fontSize: 12,
   },
   paginationWrap: {
@@ -284,15 +291,15 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#151515",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.border,
   },
   pageArrowBtnDisabled: {
     opacity: 0.4,
   },
   pageIndicatorText: {
-    color: "#ccc",
+    color: colors.textMuted,
     fontSize: 13,
     fontWeight: "600",
   },

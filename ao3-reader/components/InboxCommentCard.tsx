@@ -1,9 +1,11 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { Image, Linking, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { AO3InboxComment } from "../api/ao3InboxTypes";
 import type { AO3Link } from "./AO3WorkBlurb";
 import InlineReplyForm from "./InlineReplyForm";
+import { ThemeColors, useTheme } from "../contexts/ThemeContext";
+import { hexToRgba } from "./colorUtils";
 
 // Long enough that collapsing it is worth an extra tap (some authors reply
 // with multi-thousand-character essays).
@@ -43,6 +45,8 @@ const InboxCommentCard: React.FC<Props> = ({
   onToggleReply,
   onSubmitReply,
 }) => {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [expanded, setExpanded] = useState(false);
   const isLong = comment.body.length > COLLAPSE_THRESHOLD;
 
@@ -116,7 +120,7 @@ const InboxCommentCard: React.FC<Props> = ({
           ) : null}
           {comment.isReplied ? (
             <View style={styles.repliedBadge}>
-              <Ionicons name="checkmark-done" size={13} color="#7ec14b" />
+              <Ionicons name="checkmark-done" size={13} color={colors.accent} />
               <Text style={styles.repliedText}>Replied</Text>
             </View>
           ) : null}
@@ -126,7 +130,7 @@ const InboxCommentCard: React.FC<Props> = ({
           style={[styles.actionBtn, isReplying && styles.actionBtnSelected]}
           onPress={handleToggleReply}
         >
-          <Ionicons name="arrow-undo-outline" size={14} color="#ddd" />
+          <Ionicons name="arrow-undo-outline" size={14} color={colors.textMuted} />
           <Text style={styles.actionText}>{isReplying ? "Close" : "Reply"}</Text>
         </TouchableOpacity>
 
@@ -137,7 +141,7 @@ const InboxCommentCard: React.FC<Props> = ({
           <Ionicons
             name={selected ? "checkbox" : "square-outline"}
             size={15}
-            color={selected ? "#7ec14b" : "#ddd"}
+            color={selected ? colors.accent : colors.textMuted}
           />
           <Text style={styles.actionText}>Select</Text>
         </TouchableOpacity>
@@ -150,28 +154,29 @@ const InboxCommentCard: React.FC<Props> = ({
           submitting={replySubmitting}
           onSubmit={handleSubmitReply}
           onCancel={handleToggleReply}
+          accentColor={colors.accent}
         />
       ) : null}
     </View>
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   card: {
-    backgroundColor: "#111",
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: colors.border,
     borderRadius: 16,
     padding: 14,
     gap: 10,
   },
   cardUnread: {
     borderLeftWidth: 3,
-    borderLeftColor: "#7ec14b",
+    borderLeftColor: colors.accent,
   },
   cardSelected: {
-    borderColor: "#7ec14b",
-    backgroundColor: "#141a10",
+    borderColor: colors.accent,
+    backgroundColor: hexToRgba(colors.accent, 0.08),
   },
   topRow: {
     flexDirection: "row",
@@ -181,43 +186,43 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.border,
   },
   avatarPlaceholder: {
-    backgroundColor: "#1c1c1c",
+    backgroundColor: colors.surfaceAlt,
   },
   main: {
     flex: 1,
     gap: 3,
   },
   byline: {
-    color: "#a6a6a6",
+    color: colors.textMuted,
     fontSize: 14,
     lineHeight: 19,
   },
   author: {
-    color: "#7ec14b",
+    color: colors.accent,
     fontWeight: "700",
   },
   on: {
-    color: "#8b8b8b",
+    color: colors.textFaint,
   },
   target: {
-    color: "#d6d6d6",
+    color: colors.textMuted,
     fontWeight: "600",
     textDecorationLine: "underline",
   },
   date: {
-    color: "#8b8b8b",
+    color: colors.textFaint,
     fontSize: 12,
   },
   body: {
-    color: "#efefef",
+    color: colors.text,
     fontSize: 14,
     lineHeight: 20,
   },
   moreToggle: {
-    color: "#7ec14b",
+    color: colors.accent,
     fontSize: 12,
     fontWeight: "700",
     marginTop: 6,
@@ -228,7 +233,7 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: "#222",
+    borderTopColor: colors.border,
   },
   badges: {
     flex: 1,
@@ -237,13 +242,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   newBadge: {
-    backgroundColor: "#7ec14b",
+    backgroundColor: colors.accent,
     borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 2,
   },
   newBadgeText: {
-    color: "#000",
+    color: colors.accentText,
     fontSize: 10,
     fontWeight: "800",
   },
@@ -253,7 +258,7 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   repliedText: {
-    color: "#7ec14b",
+    color: colors.accent,
     fontSize: 11,
     fontWeight: "600",
   },
@@ -264,15 +269,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: "#1c1c1c",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: colors.border,
   },
   actionBtnSelected: {
-    borderColor: "#7ec14b",
+    borderColor: colors.accent,
   },
   actionText: {
-    color: "#ddd",
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: "600",
   },

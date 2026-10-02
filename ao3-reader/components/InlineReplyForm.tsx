@@ -1,5 +1,6 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ThemeColors, useTheme } from "../contexts/ThemeContext";
 
 // AO3's own comment threads (and its Inbox) load this inline, right where
 // the comment sits, once you tap Reply — rather than sending you to the
@@ -23,8 +24,11 @@ const InlineReplyForm: React.FC<Props> = ({
   submitting,
   onSubmit,
   onCancel,
-  accentColor = "#7ec14b",
+  accentColor,
 }) => {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const resolvedAccentColor = accentColor ?? colors.accent;
   const [text, setText] = useState("");
 
   const handleSubmit = useCallback(() => {
@@ -39,7 +43,7 @@ const InlineReplyForm: React.FC<Props> = ({
     <View style={styles.replyBox}>
       {loading ? (
         <View style={styles.replyLoadingRow}>
-          <ActivityIndicator size="small" color={accentColor} />
+          <ActivityIndicator size="small" color={resolvedAccentColor} />
           <Text style={styles.replyLoadingText}>Loading reply form...</Text>
         </View>
       ) : error ? (
@@ -49,7 +53,7 @@ const InlineReplyForm: React.FC<Props> = ({
           <TextInput
             style={styles.replyInput}
             placeholder="Write a reply..."
-            placeholderTextColor="#666"
+            placeholderTextColor={colors.textFaint}
             value={text}
             onChangeText={setText}
             editable={!submitting}
@@ -63,14 +67,14 @@ const InlineReplyForm: React.FC<Props> = ({
             <TouchableOpacity
               style={[
                 styles.replySubmitBtn,
-                { backgroundColor: accentColor },
+                { backgroundColor: resolvedAccentColor },
                 !canSubmit && styles.replySubmitBtnDisabled,
               ]}
               onPress={handleSubmit}
               disabled={!canSubmit}
             >
               {submitting ? (
-                <ActivityIndicator size="small" color="#000" />
+                <ActivityIndicator size="small" color={colors.accentText} />
               ) : (
                 <Text style={styles.replySubmitText}>Comment</Text>
               )}
@@ -82,12 +86,12 @@ const InlineReplyForm: React.FC<Props> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   replyBox: {
     marginTop: 4,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: "#222",
+    borderTopColor: colors.border,
     gap: 8,
   },
   replyLoadingRow: {
@@ -96,21 +100,21 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   replyLoadingText: {
-    color: "#9b9b9b",
+    color: colors.textFaint,
     fontSize: 13,
   },
   replyErrorText: {
-    color: "#f66",
+    color: colors.danger,
     fontSize: 13,
   },
   replyInput: {
-    backgroundColor: "#1a1a1a",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: colors.border,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: "#fff",
+    color: colors.text,
     fontSize: 14,
     minHeight: 90,
   },
@@ -124,10 +128,10 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.border,
   },
   replyCancelText: {
-    color: "#ccc",
+    color: colors.textMuted,
     fontWeight: "600",
     fontSize: 13,
   },
@@ -142,7 +146,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   replySubmitText: {
-    color: "#000",
+    color: colors.accentText,
     fontWeight: "700",
     fontSize: 13,
   },

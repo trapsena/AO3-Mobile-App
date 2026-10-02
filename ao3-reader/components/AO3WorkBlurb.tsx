@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import {
   ImageBackground,
   Linking,
@@ -8,6 +8,15 @@ import {
   View,
   ViewStyle,
 } from "react-native";
+import { ThemeColors, useTheme } from "../contexts/ThemeContext";
+import { hexToRgba } from "./colorUtils";
+
+// A handful of module-level helper components/functions below (TagPill,
+// renderLinkList, RequiredSymbol, etc.) render tag pills/icons used all over
+// this card, but live outside AO3WorkBlurb itself, so they can't read its
+// component-local `styles` (built from the current theme via createStyles)
+// directly — each takes it as an explicit prop/argument instead.
+export type AO3WorkBlurbStyles = ReturnType<typeof createAO3WorkBlurbStyles>;
 
 export type AO3TagGroup = "warnings" | "relationships" | "characters" | "freeforms";
 export type AO3BlurbKind = "work" | "bookmark" | "series";
@@ -254,7 +263,11 @@ const getRequiredTagClass = (kind: AO3RequiredTagKind, label?: string) => {
 
 const getSpriteOffset = (className: string) => SYMBOL_OFFSETS[resolveSpriteClassName(className)] ?? SYMBOL_OFFSETS["rating-notrated"];
 
-const RequiredSymbol: React.FC<{ className: string; title?: string }> = ({ className, title }) => {
+const RequiredSymbol: React.FC<{ className: string; title?: string; styles: AO3WorkBlurbStyles }> = ({
+  className,
+  title,
+  styles,
+}) => {
   const offset = getSpriteOffset(className);
 
   return (
@@ -287,7 +300,11 @@ const resolveBookmarkStatusName = (className?: string) => {
   return "public";
 };
 
-const BookmarkStatusSquare: React.FC<{ className?: string; title?: string }> = ({ className, title }) => {
+const BookmarkStatusSquare: React.FC<{ className?: string; title?: string; styles: AO3WorkBlurbStyles }> = ({
+  className,
+  title,
+  styles,
+}) => {
   const kind = resolveBookmarkStatusName(className);
   const source = BOOKMARK_STATUS_IMAGES[kind];
 
@@ -300,7 +317,10 @@ const BookmarkStatusSquare: React.FC<{ className?: string; title?: string }> = (
   );
 };
 
-const BookmarkCountSquare: React.FC<{ count?: number | string }> = ({ count }) => {
+const BookmarkCountSquare: React.FC<{ count?: number | string; styles: AO3WorkBlurbStyles }> = ({
+  count,
+  styles,
+}) => {
   return (
     <View style={styles.bookmarkCountFrame}>
       <ImageBackground
@@ -321,16 +341,20 @@ const BookmarkCountSquare: React.FC<{ count?: number | string }> = ({ count }) =
   );
 };
 
-const BookmarkStatusBlock: React.FC<{ icon?: AO3RequiredTagIcon; count?: number | string }> = ({ icon, count }) => {
+const BookmarkStatusBlock: React.FC<{
+  icon?: AO3RequiredTagIcon;
+  count?: number | string;
+  styles: AO3WorkBlurbStyles;
+}> = ({ icon, count, styles }) => {
   if (!icon && count === undefined) return null;
 
   return (
     <View style={styles.bookmarkStatusGrid}>
       <View style={styles.bookmarkSlotLeft}>
-        <BookmarkStatusSquare className={icon?.className} title={icon?.title} />
+        <BookmarkStatusSquare className={icon?.className} title={icon?.title} styles={styles} />
       </View>
       <View style={styles.bookmarkSlotRight}>
-        <BookmarkCountSquare count={count} />
+        <BookmarkCountSquare count={count} styles={styles} />
       </View>
     </View>
   );
@@ -339,8 +363,9 @@ const BookmarkStatusBlock: React.FC<{ icon?: AO3RequiredTagIcon; count?: number 
 const renderRequiredSymbols = (args: {
   kind: AO3BlurbKind;
   requiredTagIcons?: AO3RequiredTagIcon[];
+  styles: AO3WorkBlurbStyles;
 }) => {
-  const { requiredTagIcons } = args;
+  const { requiredTagIcons, styles } = args;
   if (!requiredTagIcons || requiredTagIcons.length === 0) return null;
 
   return (
@@ -357,7 +382,7 @@ const renderRequiredSymbols = (args: {
                 : styles.requiredSymbolSlotBottomRight;
         return (
           <View key={`${className}-${index}`} style={[styles.requiredSymbolSlot, positionStyle]}>
-            <RequiredSymbol className={className} title={icon.title} />
+            <RequiredSymbol className={className} title={icon.title} styles={styles} />
           </View>
         );
       })}
@@ -369,7 +394,8 @@ const TagPill: React.FC<{
   label: string;
   tone?: "muted" | "warning" | "accent";
   onPress?: () => void;
-}> = ({ label, tone = "muted", onPress }) => {
+  styles: AO3WorkBlurbStyles;
+}> = ({ label, tone = "muted", onPress, styles }) => {
   const content = <Text style={[styles.tagText, tone === "warning" && styles.tagTextWarning, tone === "accent" && styles.tagTextAccent]}>{label}</Text>;
 
   if (onPress) {
@@ -384,9 +410,10 @@ const TagPill: React.FC<{
 };
 
 const renderLinkList = (
-  items?: AO3Link[],
-  tone: "muted" | "warning" | "accent" = "muted",
-  onPress?: (item: AO3Link) => void,
+  items: AO3Link[] | undefined,
+  tone: "muted" | "warning" | "accent",
+  onPress: ((item: AO3Link) => void) | undefined,
+  styles: AO3WorkBlurbStyles,
 ) => {
   if (!items || items.length === 0) return null;
 
@@ -397,6 +424,7 @@ const renderLinkList = (
           key={`${item.label}-${index}`}
           label={item.label}
           tone={tone}
+          styles={styles}
           onPress={
             onPress
               ? () => onPress(item)
@@ -417,7 +445,8 @@ const renderLinkList = (
 // the same way a fandom tag already does).
 const renderGroupedCommaLinks = (
   items: Array<{ link: AO3Link; tone: "muted" | "warning" | "accent"; group: AO3TagGroup }>,
-  onPressTag?: (tag: AO3Link, group: AO3TagGroup) => void,
+  onPressTag: ((tag: AO3Link, group: AO3TagGroup) => void) | undefined,
+  styles: AO3WorkBlurbStyles,
 ) => {
   if (items.length === 0) return null;
 
@@ -454,9 +483,10 @@ const renderGroupedCommaLinks = (
 // since bookmark-specific metadata (like this) now renders outside the card,
 // in whichever screen composes it (see AO3ListingScreen's bookmark meta box).
 export const renderCommaLinkList = (
-  items?: AO3Link[],
-  tone: "muted" | "warning" | "accent" = "muted",
-  onPress?: (item: AO3Link) => void,
+  items: AO3Link[] | undefined,
+  tone: "muted" | "warning" | "accent",
+  onPress: ((item: AO3Link) => void) | undefined,
+  styles: AO3WorkBlurbStyles,
 ) => {
   if (!items || items.length === 0) return null;
 
@@ -488,6 +518,8 @@ export const renderCommaLinkList = (
 };
 
 const AO3WorkBlurb: React.FC<Props> = ({ kind = "work", work, bookmark, series, onPressWork, onPressAuthor, onPressTag, style }) => {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createAO3WorkBlurbStyles(colors), [colors]);
   const isBookmark = kind === "bookmark";
   const isSeries = kind === "series";
   const data = (isBookmark ? bookmark : isSeries ? series : work) ?? null;
@@ -543,6 +575,7 @@ const AO3WorkBlurb: React.FC<Props> = ({ kind = "work", work, bookmark, series, 
           {renderRequiredSymbols({
             kind: isBookmark ? "bookmark" : "work",
             requiredTagIcons,
+            styles,
           })}
 
           <View style={styles.titleBlock}>
@@ -569,23 +602,37 @@ const AO3WorkBlurb: React.FC<Props> = ({ kind = "work", work, bookmark, series, 
         </View>
 
         <View style={styles.headerMeta}>
-          {isBookmark ? <BookmarkStatusBlock icon={bookmarkStatusIcon} count={bookmark?.count} /> : null}
+          {isBookmark ? <BookmarkStatusBlock icon={bookmarkStatusIcon} count={bookmark?.count} styles={styles} /> : null}
           {!isBookmark && publishedAt ? <Text style={styles.date}>{publishedAt}</Text> : null}
         </View>
       </View>
 
-      {renderLinkList(fandoms, "accent", (item) => onPressTag?.(item, "fandoms"))}
+      {renderLinkList(fandoms, "accent", (item) => onPressTag?.(item, "fandoms"), styles)}
 
       <View style={styles.requiredTags}>
-        {!isBookmark && rating ? <TagPill label={rating.label} tone="accent" onPress={rating.href ? () => openUrl(rating.href) : onPressTag ? () => onPressTag(rating, "rating") : undefined} /> : null}
-        {!isBookmark ? renderLinkList(warningsList, "warning", (item) => onPressTag?.(item, "warnings")) : null}
-        {!isBookmark ? renderLinkList(categoryList, "muted", (item) => onPressTag?.(item, "category")) : null}
-        {status ? <TagPill label={status.label} tone={isBookmark ? "accent" : "muted"} onPress={status.href ? () => openUrl(status.href) : onPressTag ? () => onPressTag(status, "status") : undefined} /> : null}
+        {!isBookmark && rating ? (
+          <TagPill
+            label={rating.label}
+            tone="accent"
+            styles={styles}
+            onPress={rating.href ? () => openUrl(rating.href) : onPressTag ? () => onPressTag(rating, "rating") : undefined}
+          />
+        ) : null}
+        {!isBookmark ? renderLinkList(warningsList, "warning", (item) => onPressTag?.(item, "warnings"), styles) : null}
+        {!isBookmark ? renderLinkList(categoryList, "muted", (item) => onPressTag?.(item, "category"), styles) : null}
+        {status ? (
+          <TagPill
+            label={status.label}
+            tone={isBookmark ? "accent" : "muted"}
+            styles={styles}
+            onPress={status.href ? () => openUrl(status.href) : onPressTag ? () => onPressTag(status, "status") : undefined}
+          />
+        ) : null}
       </View>
 
       {commaTagItems.length > 0 ? (
         <View style={styles.tagsSection}>
-          {renderGroupedCommaLinks(commaTagItems, onPressTag)}
+          {renderGroupedCommaLinks(commaTagItems, onPressTag, styles)}
         </View>
       ) : null}
 
@@ -637,7 +684,7 @@ const AO3WorkBlurb: React.FC<Props> = ({ kind = "work", work, bookmark, series, 
       {extraBadges && extraBadges.length > 0 ? (
         <View style={styles.badgesRow}>
           {extraBadges.map((badge, index) => (
-            <TagPill key={`${badge}-${index}`} label={badge} tone="accent" />
+            <TagPill key={`${badge}-${index}`} label={badge} tone="accent" styles={styles} />
           ))}
         </View>
       ) : null}
@@ -645,11 +692,14 @@ const AO3WorkBlurb: React.FC<Props> = ({ kind = "work", work, bookmark, series, 
   );
 };
 
-const styles = StyleSheet.create({
+// Exported so other files that reuse this component's exported helpers
+// (currently just BookmarkOwnerCard, via renderCommaLinkList) can build the
+// matching styles object those helpers expect, themed the same way.
+export const createAO3WorkBlurbStyles = (colors: ThemeColors) => StyleSheet.create({
   card: {
-    backgroundColor: "#111",
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: colors.border,
     borderRadius: 16,
     padding: 16,
     gap: 12,
@@ -716,22 +766,22 @@ const styles = StyleSheet.create({
     position: "absolute",
   },
   title: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 17,
     fontWeight: "700",
     lineHeight: 22,
   },
   byline: {
-    color: "#a6a6a6",
+    color: colors.textMuted,
     fontSize: 13,
     marginTop: 4,
   },
   bylineAuthor: {
-    color: "#d6d6d6",
+    color: colors.text,
     fontWeight: "600",
   },
   date: {
-    color: "#8a8a8a",
+    color: colors.textFaint,
     fontSize: 12,
     textAlign: "right",
     paddingTop: 2,
@@ -792,8 +842,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   tagPill: {
-    backgroundColor: "#1c1c1c",
-    borderColor: "#343434",
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.border,
     borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 10,
@@ -804,11 +854,11 @@ const styles = StyleSheet.create({
     borderColor: "rgba(198, 67, 82, 0.35)",
   },
   tagPillAccent: {
-    backgroundColor: "rgba(126, 193, 75, 0.12)",
-    borderColor: "rgba(126, 193, 75, 0.35)",
+    backgroundColor: hexToRgba(colors.accent, 0.12),
+    borderColor: hexToRgba(colors.accent, 0.35),
   },
   tagText: {
-    color: "#d8d8d8",
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: "600",
   },
@@ -816,19 +866,19 @@ const styles = StyleSheet.create({
     color: "#f1a3ad",
   },
   tagTextAccent: {
-    color: "#bdf08c",
+    color: colors.accent,
   },
   summaryBlock: {
     gap: 8,
   },
   sectionLabel: {
-    color: "#8c8c8c",
+    color: colors.textFaint,
     fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 0.7,
   },
   summaryText: {
-    color: "#efefef",
+    color: colors.text,
     fontSize: 14,
     lineHeight: 20,
   },
@@ -836,12 +886,12 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   seriesText: {
-    color: "#dcdcdc",
+    color: colors.textMuted,
     fontSize: 14,
     lineHeight: 20,
   },
   seriesLink: {
-    color: "#7ec14b",
+    color: colors.accent,
     fontWeight: "700",
     textDecorationLine: "underline",
   },
@@ -854,22 +904,22 @@ const styles = StyleSheet.create({
   statItem: {
     minWidth: "30%",
     flexGrow: 1,
-    backgroundColor: "#161616",
+    backgroundColor: colors.surfaceAlt,
     borderRadius: 12,
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderWidth: 1,
-    borderColor: "#262626",
+    borderColor: colors.border,
   },
   statLabel: {
-    color: "#8b8b8b",
+    color: colors.textFaint,
     fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: 4,
   },
   statValue: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 14,
     fontWeight: "700",
   },
@@ -879,27 +929,26 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   commaTagsRow: {
-    color: "#fff",
+    color: colors.text,
     lineHeight: 18,
   },
   commaTagText: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 14,
     lineHeight: 18,
     textDecorationLine: "underline",
-    
   },
   commaTagSeparator: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 14,
     lineHeight: 18,
   },
   commaTagTextWarning: {
-    color: "#fff",
+    color: colors.text,
     fontWeight: "700",
   },
   commaTagTextAccent: {
-    borderBottomColor: "#fff",
+    borderBottomColor: colors.text,
   },
 });
 

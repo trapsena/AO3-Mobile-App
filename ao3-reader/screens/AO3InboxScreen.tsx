@@ -26,6 +26,9 @@ import AO3InboxFilterPanel from "../components/AO3InboxFilterPanel";
 import InboxCommentCard from "../components/InboxCommentCard";
 import type { AO3Link } from "../components/AO3WorkBlurb";
 import type { InboxHeaderInfo } from "../components/Ao3Header";
+import { ThemeColors, useTheme } from "../contexts/ThemeContext";
+
+type AO3InboxScreenStyles = ReturnType<typeof createStyles>;
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -349,13 +352,15 @@ const BulkButton: React.FC<{
   danger?: boolean;
   disabled?: boolean;
   onPress: () => void;
-}> = ({ label, icon, danger, disabled, onPress }) => (
+  styles: AO3InboxScreenStyles;
+  colors: ThemeColors;
+}> = ({ label, icon, danger, disabled, onPress, styles, colors }) => (
   <TouchableOpacity
     style={[styles.bulkBtn, danger && styles.bulkBtnDanger, disabled && styles.bulkBtnDisabled]}
     onPress={onPress}
     disabled={disabled}
   >
-    {icon ? <Ionicons name={icon} size={14} color={danger ? "#f66" : "#ddd"} /> : null}
+    {icon ? <Ionicons name={icon} size={14} color={danger ? colors.danger : colors.textMuted} /> : null}
     <Text style={[styles.bulkBtnText, danger && styles.bulkBtnTextDanger]}>{label}</Text>
   </TouchableOpacity>
 );
@@ -373,6 +378,8 @@ const AO3InboxScreen: React.FC<Props> = ({
   contentContainerTopPadding = 0,
   onHeaderActionsChange,
 }) => {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const webRef = useRef<any>(null);
   const lastPayloadRef = useRef<string | null>(null);
   const listRef = useRef<any>(null);
@@ -694,7 +701,7 @@ const AO3InboxScreen: React.FC<Props> = ({
 
   const contentContainerStyle = useMemo(
     () => [styles.listContent, { paddingTop: styles.listContent.padding + (contentContainerTopPadding || 0) }],
-    [contentContainerTopPadding],
+    [contentContainerTopPadding, styles],
   );
 
   const renderItem = useCallback(
@@ -733,6 +740,7 @@ const AO3InboxScreen: React.FC<Props> = ({
       replySubmitting,
       handleToggleReply,
       handleSubmitReply,
+      styles,
     ],
   );
 
@@ -741,11 +749,11 @@ const AO3InboxScreen: React.FC<Props> = ({
       <RefreshControl
         refreshing={refreshing}
         onRefresh={handleRefresh}
-        tintColor="#7ec14b"
-        colors={["#7ec14b"]}
+        tintColor={colors.accent}
+        colors={[colors.accent]}
       />
     ),
-    [refreshing, handleRefresh],
+    [refreshing, handleRefresh, colors],
   );
 
   const selectedCount = selectedIds.size;
@@ -758,8 +766,8 @@ const AO3InboxScreen: React.FC<Props> = ({
         {items.length > 0 ? (
           <View style={styles.bulkBar}>
             <View style={styles.bulkRow}>
-              <BulkButton label="Select All" onPress={selectAll} />
-              <BulkButton label="Select None" onPress={selectNone} />
+              <BulkButton label="Select All" onPress={selectAll} styles={styles} colors={colors} />
+              <BulkButton label="Select None" onPress={selectNone} styles={styles} colors={colors} />
               {selectedCount > 0 ? <Text style={styles.selectedCount}>{selectedCount} selected</Text> : null}
             </View>
             <View style={styles.bulkRow}>
@@ -768,12 +776,16 @@ const AO3InboxScreen: React.FC<Props> = ({
                 icon="mail-open-outline"
                 disabled={noneSelected || busy}
                 onPress={handleMarkRead}
+                styles={styles}
+                colors={colors}
               />
               <BulkButton
                 label="Mark Unread"
                 icon="mail-unread-outline"
                 disabled={noneSelected || busy}
                 onPress={handleMarkUnread}
+                styles={styles}
+                colors={colors}
               />
               <BulkButton
                 label="Delete"
@@ -781,8 +793,10 @@ const AO3InboxScreen: React.FC<Props> = ({
                 danger
                 disabled={noneSelected || busy}
                 onPress={handleDelete}
+                styles={styles}
+                colors={colors}
               />
-              {busy ? <ActivityIndicator size="small" color="#7ec14b" /> : null}
+              {busy ? <ActivityIndicator size="small" color={colors.accent} /> : null}
             </View>
           </View>
         ) : null}
@@ -799,6 +813,8 @@ const AO3InboxScreen: React.FC<Props> = ({
       handleMarkRead,
       handleMarkUnread,
       handleDelete,
+      styles,
+      colors,
     ],
   );
 
@@ -811,7 +827,7 @@ const AO3InboxScreen: React.FC<Props> = ({
         </Text>
       </View>
     ),
-    [],
+    [styles],
   );
 
   const listFooter = useMemo(
@@ -823,7 +839,7 @@ const AO3InboxScreen: React.FC<Props> = ({
             onPress={() => goToUrl(pagination?.prevHref)}
             disabled={!pagination?.prevHref}
           >
-            <Ionicons name="chevron-back" size={16} color={pagination?.prevHref ? "#fff" : "#555"} />
+            <Ionicons name="chevron-back" size={16} color={pagination?.prevHref ? colors.text : colors.textFaint} />
           </TouchableOpacity>
 
           <ScrollView
@@ -854,11 +870,11 @@ const AO3InboxScreen: React.FC<Props> = ({
             onPress={() => goToUrl(pagination?.nextHref)}
             disabled={!pagination?.nextHref}
           >
-            <Ionicons name="chevron-forward" size={16} color={pagination?.nextHref ? "#fff" : "#555"} />
+            <Ionicons name="chevron-forward" size={16} color={pagination?.nextHref ? colors.text : colors.textFaint} />
           </TouchableOpacity>
         </View>
       ) : null,
-    [hasPagination, pagination, numericPages, goToUrl],
+    [hasPagination, pagination, numericPages, goToUrl, styles, colors],
   );
 
   return (
@@ -868,7 +884,7 @@ const AO3InboxScreen: React.FC<Props> = ({
     <View style={styles.container}>
       {loading ? (
         <View style={[styles.loading, { paddingTop: contentContainerTopPadding }]}>
-          <ActivityIndicator size="large" color="#7ec14b" />
+          <ActivityIndicator size="large" color={colors.accent} />
           <Text style={styles.loadingText}>Loading inbox...</Text>
         </View>
       ) : (
@@ -924,10 +940,10 @@ const AO3InboxScreen: React.FC<Props> = ({
 /* Styles                                                               */
 /* ------------------------------------------------------------------ */
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: colors.background,
   },
   loading: {
     flex: 1,
@@ -936,7 +952,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   loadingText: {
-    color: "#bfbfbf",
+    color: colors.textMuted,
     fontSize: 14,
   },
   listContent: {
@@ -952,7 +968,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   heading: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 18,
     fontWeight: "700",
   },
@@ -972,9 +988,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 999,
-    backgroundColor: "#1c1c1c",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: colors.border,
   },
   bulkBtnDanger: {
     borderColor: "rgba(198, 67, 82, 0.35)",
@@ -983,15 +999,15 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   bulkBtnText: {
-    color: "#ddd",
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: "600",
   },
   bulkBtnTextDanger: {
-    color: "#f66",
+    color: colors.danger,
   },
   selectedCount: {
-    color: "#7ec14b",
+    color: colors.accent,
     fontSize: 12,
     fontWeight: "700",
     marginLeft: 4,
@@ -1002,13 +1018,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   emptyTitle: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 16,
     fontWeight: "700",
     marginBottom: 8,
   },
   emptyBody: {
-    color: "#9b9b9b",
+    color: colors.textFaint,
     fontSize: 13,
     textAlign: "center",
     lineHeight: 18,
@@ -1026,9 +1042,9 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#151515",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.border,
   },
   pageArrowBtnDisabled: {
     opacity: 0.4,
@@ -1046,24 +1062,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 8,
-    backgroundColor: "#151515",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.border,
   },
   pageNumBtnActive: {
-    backgroundColor: "#7ec14b",
-    borderColor: "#7ec14b",
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
   },
   pageNumText: {
-    color: "#ccc",
+    color: colors.textMuted,
     fontSize: 13,
     fontWeight: "600",
   },
   pageNumTextActive: {
-    color: "#000",
+    color: colors.accentText,
   },
   pageGap: {
-    color: "#777",
+    color: colors.textFaint,
     fontSize: 13,
     paddingHorizontal: 4,
     alignSelf: "center",

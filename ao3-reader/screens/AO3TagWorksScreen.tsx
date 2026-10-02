@@ -20,6 +20,7 @@ import { buildFilterQueryString, deriveSelectionFromFacets } from "../api/ao3Fil
 import AO3WorkBlurb, { AO3Link, AO3WorkBlurbData } from "../components/AO3WorkBlurb";
 import AO3FilterPanel from "../components/AO3FilterPanel";
 import type { TagWorksHeaderInfo } from "../components/Ao3Header";
+import { ThemeColors, useTheme } from "../contexts/ThemeContext";
 
 const EMPTY_WORKS_FACETS: AO3FilterFacets = { kind: "works", sortOptions: [] };
 
@@ -467,6 +468,8 @@ const AO3TagWorksScreen: React.FC<Props> = ({
   contentContainerTopPadding = 0,
   onHeaderActionsChange,
 }) => {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const webRef = useRef<any>(null);
   const lastPayloadRef = useRef<string | null>(null);
   const listRef = useRef<any>(null);
@@ -659,7 +662,7 @@ const AO3TagWorksScreen: React.FC<Props> = ({
         onPress={() => goToUrl(pagination?.prevHref)}
         disabled={!pagination?.prevHref}
       >
-        <Ionicons name="chevron-back" size={16} color={pagination?.prevHref ? "#fff" : "#555"} />
+        <Ionicons name="chevron-back" size={16} color={pagination?.prevHref ? colors.text : colors.textFaint} />
       </TouchableOpacity>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pageNumbersRow}>
@@ -686,7 +689,7 @@ const AO3TagWorksScreen: React.FC<Props> = ({
         onPress={() => goToUrl(pagination?.nextHref)}
         disabled={!pagination?.nextHref}
       >
-        <Ionicons name="chevron-forward" size={16} color={pagination?.nextHref ? "#fff" : "#555"} />
+        <Ionicons name="chevron-forward" size={16} color={pagination?.nextHref ? colors.text : colors.textFaint} />
       </TouchableOpacity>
     </View>
   ) : null;
@@ -698,7 +701,7 @@ const AO3TagWorksScreen: React.FC<Props> = ({
     <View style={styles.container}>
       {loading ? (
         <View style={[styles.loading, { paddingTop: contentContainerTopPadding }]}>
-          <ActivityIndicator size="large" color="#7ec14b" />
+          <ActivityIndicator size="large" color={colors.accent} />
           <Text style={styles.loadingText}>Loading works...</Text>
         </View>
       ) : (
@@ -718,8 +721,8 @@ const AO3TagWorksScreen: React.FC<Props> = ({
             <RefreshControl
               refreshing={refreshing}
               onRefresh={handleRefresh}
-              tintColor="#7ec14b"
-              colors={["#7ec14b"]}
+              tintColor={colors.accent}
+              colors={[colors.accent]}
             />
           }
           renderItem={renderItem}
@@ -761,10 +764,10 @@ const AO3TagWorksScreen: React.FC<Props> = ({
 /* Styles                                                               */
 /* ------------------------------------------------------------------ */
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: colors.background,
   },
   loading: {
     flex: 1,
@@ -773,7 +776,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   loadingText: {
-    color: "#bfbfbf",
+    color: colors.textMuted,
     fontSize: 14,
   },
   listContent: {
@@ -790,13 +793,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   emptyTitle: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 16,
     fontWeight: "700",
     marginBottom: 8,
   },
   emptyBody: {
-    color: "#9b9b9b",
+    color: colors.textFaint,
     fontSize: 13,
     textAlign: "center",
     lineHeight: 18,
@@ -814,9 +817,9 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#151515",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.border,
   },
   pageArrowBtnDisabled: {
     opacity: 0.4,
@@ -834,24 +837,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 8,
-    backgroundColor: "#151515",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.border,
   },
   pageNumBtnActive: {
-    backgroundColor: "#7ec14b",
-    borderColor: "#7ec14b",
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
   },
   pageNumText: {
-    color: "#ccc",
+    color: colors.textMuted,
     fontSize: 13,
     fontWeight: "600",
   },
   pageNumTextActive: {
-    color: "#000",
+    color: colors.accentText,
   },
   pageGap: {
-    color: "#777",
+    color: colors.textFaint,
     fontSize: 13,
     paddingHorizontal: 4,
     alignSelf: "center",

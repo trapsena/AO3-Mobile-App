@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { AO3FandomCategory, fetchFandomCategories } from "../api/ao3Fandoms";
 import { AO3Link } from "../components/AO3WorkBlurb";
+import { ThemeColors, useTheme } from "../contexts/ThemeContext";
 
 interface Props {
   onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
@@ -36,6 +37,8 @@ const AO3FandomsScreen: React.FC<Props> = ({
   onOpenAllFandoms,
   onPressTag,
 }) => {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [categories, setCategories] = useState<AO3FandomCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -64,7 +67,7 @@ const AO3FandomsScreen: React.FC<Props> = ({
       <View style={[styles.container, styles.centered]}>
         <ActivityIndicator
           size="large"
-          color="#7ec14b"
+          color={colors.accent}
           style={{ marginTop: contentContainerTopPadding + 40 }}
         />
       </View>
@@ -81,8 +84,8 @@ const AO3FandomsScreen: React.FC<Props> = ({
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            tintColor="#7ec14b"
-            colors={["#7ec14b"]}
+            tintColor={colors.accent}
+            colors={[colors.accent]}
           />
         }
       >
@@ -126,10 +129,10 @@ const AO3FandomsScreen: React.FC<Props> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: colors.background,
   },
   centered: {
     alignItems: "center",
@@ -141,27 +144,27 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   pageTitle: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 22,
     fontWeight: "700",
     marginBottom: 4,
   },
   emptyText: {
-    color: "#999",
+    color: colors.textFaint,
     fontSize: 14,
     textAlign: "center",
     marginTop: 40,
   },
   fandomsBox: {
-    backgroundColor: "#111",
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: colors.border,
     borderRadius: 16,
     padding: 16,
     gap: 12,
   },
   fandomsTitle: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 16,
     fontWeight: "700",
   },
@@ -173,8 +176,8 @@ const styles = StyleSheet.create({
   fandomPill: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1c1c1c",
-    borderColor: "#343434",
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.border,
     borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 10,
@@ -183,13 +186,13 @@ const styles = StyleSheet.create({
   },
   fandomPillText: {
     flexShrink: 1,
-    color: "#d8d8d8",
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: "600",
   },
   fandomPillCount: {
     flexShrink: 0,
-    color: "#d8d8d8",
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: "600",
   },
@@ -199,10 +202,10 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.border,
   },
   allBtnText: {
-    color: "#7ec14b",
+    color: colors.accent,
     fontSize: 13,
     fontWeight: "600",
   },

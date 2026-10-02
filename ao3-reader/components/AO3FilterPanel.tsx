@@ -21,9 +21,17 @@ import {
   WORK_FACET_TAG_TYPES,
 } from "../api/ao3FilterTypes";
 import TagAutocompleteInput from "./TagAutocompleteInput";
+import { ThemeColors, useTheme } from "../contexts/ThemeContext";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const PANEL_WIDTH = Math.min(340, SCREEN_WIDTH * 0.88);
+
+// Module-level helper components below (Section, Chip, TriStateChip, etc.)
+// render chips/rows used throughout this panel but live outside
+// AO3FilterPanel itself, so they can't read its component-local `styles`
+// (built from the current theme via createStyles) directly — each takes it
+// as an explicit prop instead. Same pattern as AO3WorkBlurb.tsx.
+type AO3FilterPanelStyles = ReturnType<typeof createStyles>;
 
 const FACET_LABELS: Record<AO3FacetTagType, string> = {
   rating: "Rating",
@@ -50,6 +58,8 @@ interface Props {
 type TriState = "include" | "exclude" | undefined;
 
 const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value, onChange, onApply, onClear }) => {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const translateX = useRef(new Animated.Value(PANEL_WIDTH)).current;
   const backdropOpacity = useRef(new Animated.Value(0)).current;
   const [expanded, setExpanded] = useState<Partial<Record<AO3FacetTagType, boolean>>>({});
@@ -140,14 +150,14 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Filters</Text>
           <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            <Ionicons name="close" size={24} color="#fff" />
+            <Ionicons name="close" size={24} color={colors.text} />
           </TouchableOpacity>
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           {/* Sort by — every kind has this */}
           {facets.sortOptions.length > 0 ? (
-            <Section title="Sort by">
+            <Section title="Sort by" styles={styles}>
               <View style={styles.chipRow}>
                 {facets.sortOptions.map((opt) => (
                   <Chip
@@ -156,6 +166,7 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
                     label={opt.label}
                     active={value.sortColumn ? value.sortColumn === opt.value : !!opt.selected}
                     onSelect={setSortColumn}
+                    styles={styles}
                   />
                 ))}
               </View>
@@ -164,13 +175,16 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
 
           {/* Collection picker — collection-works only */}
           {kind === "collection-works" ? (
-            <Section title="Collection">
+            <Section title="Collection" styles={styles}>
               {(facets.collections || []).map((c) => (
                 <FacetCheckboxRow
                   key={c.id}
                   option={c}
                   checked={(value.collectionIds || []).includes(c.id)}
                   onToggle={toggleCollectionId}
+                  styles={styles}
+                  accent={colors.accent}
+                  inactiveColor={colors.textFaint}
                 />
               ))}
             </Section>
@@ -189,7 +203,7 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
                       onPress={() => setExpanded((prev) => ({ ...prev, [tagType]: !prev[tagType] }))}
                     >
                       <Text style={styles.sectionTitle}>{FACET_LABELS[tagType]}</Text>
-                      <Ionicons name={isOpen ? "chevron-up" : "chevron-down"} size={18} color="#999" />
+                      <Ionicons name={isOpen ? "chevron-up" : "chevron-down"} size={18} color={colors.textFaint} />
                     </TouchableOpacity>
                     {isOpen ? (
                       <View style={styles.chipRow}>
@@ -200,6 +214,8 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
                             tagType={tagType}
                             state={triStateFor(tagType, opt.id)}
                             onToggle={cycleTriState}
+                            styles={styles}
+                            accentText={colors.accentText}
                           />
                         ))}
                       </View>
@@ -219,11 +235,11 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
               layer, which was previously found to disrupt the keyboard. */}
           {kind !== "collection-works" ? (
             <View style={styles.tagFieldLayer1}>
-              <Section title="Other tags to include">
+              <Section title="Other tags to include" styles={styles}>
                 <TagAutocompleteInput
                   style={styles.textInput}
                   placeholder="Comma-separated tag names"
-                  placeholderTextColor="#666"
+                  placeholderTextColor={colors.textFaint}
                   value={value.otherTagNames || ""}
                   onChangeText={(t) => set("otherTagNames", t)}
                 />
@@ -232,11 +248,11 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
           ) : null}
           {kind !== "collection-works" ? (
             <View style={styles.tagFieldLayer2}>
-              <Section title="Other tags to exclude">
+              <Section title="Other tags to exclude" styles={styles}>
                 <TagAutocompleteInput
                   style={styles.textInput}
                   placeholder="Comma-separated tag names"
-                  placeholderTextColor="#666"
+                  placeholderTextColor={colors.textFaint}
                   value={value.excludedTagNames || ""}
                   onChangeText={(t) => set("excludedTagNames", t)}
                 />
@@ -247,11 +263,11 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
           {/* Bookmarker's own tags — bookmarks only */}
           {kind === "bookmarks" ? (
             <View style={styles.tagFieldLayer3}>
-              <Section title="Other bookmarker's tags to include">
+              <Section title="Other bookmarker's tags to include" styles={styles}>
                 <TagAutocompleteInput
                   style={styles.textInput}
                   placeholder="Comma-separated tag names"
-                  placeholderTextColor="#666"
+                  placeholderTextColor={colors.textFaint}
                   value={value.otherBookmarkTagNames || ""}
                   onChangeText={(t) => set("otherBookmarkTagNames", t)}
                 />
@@ -260,11 +276,11 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
           ) : null}
           {kind === "bookmarks" ? (
             <View style={styles.tagFieldLayer4}>
-              <Section title="Other bookmarker's tags to exclude">
+              <Section title="Other bookmarker's tags to exclude" styles={styles}>
                 <TagAutocompleteInput
                   style={styles.textInput}
                   placeholder="Comma-separated tag names"
-                  placeholderTextColor="#666"
+                  placeholderTextColor={colors.textFaint}
                   value={value.excludedBookmarkTagNames || ""}
                   onChangeText={(t) => set("excludedBookmarkTagNames", t)}
                 />
@@ -274,32 +290,32 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
 
           {/* Crossover / Completion — works only */}
           {kind === "works" ? (
-            <Section title="Crossovers">
+            <Section title="Crossovers" styles={styles}>
               <View style={styles.chipRow}>
-                <Chip value="" label="Include" active={value.crossover === ""} onSelect={setCrossover} />
-                <Chip value="F" label="Exclude" active={value.crossover === "F"} onSelect={setCrossover} />
-                <Chip value="T" label="Only" active={value.crossover === "T"} onSelect={setCrossover} />
+                <Chip value="" label="Include" active={value.crossover === ""} onSelect={setCrossover} styles={styles} />
+                <Chip value="F" label="Exclude" active={value.crossover === "F"} onSelect={setCrossover} styles={styles} />
+                <Chip value="T" label="Only" active={value.crossover === "T"} onSelect={setCrossover} styles={styles} />
               </View>
             </Section>
           ) : null}
           {kind === "works" ? (
-            <Section title="Completion Status">
+            <Section title="Completion Status" styles={styles}>
               <View style={styles.chipRow}>
-                <Chip value="" label="All" active={value.complete === ""} onSelect={setComplete} />
-                <Chip value="T" label="Complete" active={value.complete === "T"} onSelect={setComplete} />
-                <Chip value="F" label="WIP" active={value.complete === "F"} onSelect={setComplete} />
+                <Chip value="" label="All" active={value.complete === ""} onSelect={setComplete} styles={styles} />
+                <Chip value="T" label="Complete" active={value.complete === "T"} onSelect={setComplete} styles={styles} />
+                <Chip value="F" label="WIP" active={value.complete === "F"} onSelect={setComplete} styles={styles} />
               </View>
             </Section>
           ) : null}
 
           {/* Word count — works + bookmarks */}
           {kind !== "collection-works" ? (
-            <Section title="Word Count">
+            <Section title="Word Count" styles={styles}>
               <View style={styles.rangeRow}>
                 <TextInput
                   style={[styles.textInput, styles.rangeInput]}
                   placeholder="From"
-                  placeholderTextColor="#666"
+                  placeholderTextColor={colors.textFaint}
                   keyboardType="number-pad"
                   value={value.wordsFrom || ""}
                   onChangeText={(t) => set("wordsFrom", t)}
@@ -307,7 +323,7 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
                 <TextInput
                   style={[styles.textInput, styles.rangeInput]}
                   placeholder="To"
-                  placeholderTextColor="#666"
+                  placeholderTextColor={colors.textFaint}
                   keyboardType="number-pad"
                   value={value.wordsTo || ""}
                   onChangeText={(t) => set("wordsTo", t)}
@@ -318,19 +334,19 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
 
           {/* Date updated — works only */}
           {kind === "works" ? (
-            <Section title="Date Updated">
+            <Section title="Date Updated" styles={styles}>
               <View style={styles.rangeRow}>
                 <TextInput
                   style={[styles.textInput, styles.rangeInput]}
                   placeholder="YYYY-MM-DD"
-                  placeholderTextColor="#666"
+                  placeholderTextColor={colors.textFaint}
                   value={value.dateFrom || ""}
                   onChangeText={(t) => set("dateFrom", t)}
                 />
                 <TextInput
                   style={[styles.textInput, styles.rangeInput]}
                   placeholder="YYYY-MM-DD"
-                  placeholderTextColor="#666"
+                  placeholderTextColor={colors.textFaint}
                   value={value.dateTo || ""}
                   onChangeText={(t) => set("dateTo", t)}
                 />
@@ -340,22 +356,22 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
 
           {/* Search within results — works + bookmarks (different labels) */}
           {kind !== "collection-works" ? (
-            <Section title="Search within results">
+            <Section title="Search within results" styles={styles}>
               <TextInput
                 style={styles.textInput}
                 placeholder="Search text"
-                placeholderTextColor="#666"
+                placeholderTextColor={colors.textFaint}
                 value={value.query || ""}
                 onChangeText={(t) => set("query", t)}
               />
             </Section>
           ) : null}
           {kind === "bookmarks" ? (
-            <Section title="Search bookmarker's tags and notes">
+            <Section title="Search bookmarker's tags and notes" styles={styles}>
               <TextInput
                 style={styles.textInput}
                 placeholder="Search text"
-                placeholderTextColor="#666"
+                placeholderTextColor={colors.textFaint}
                 value={value.bookmarkQuery || ""}
                 onChangeText={(t) => set("bookmarkQuery", t)}
               />
@@ -364,12 +380,22 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
 
           {/* Bookmark types — bookmarks only */}
           {kind === "bookmarks" ? (
-            <Section title="Bookmark Types">
-              <ToggleRow label="Recs only" value={!!value.recOnly} onToggle={toggleRecOnly} />
+            <Section title="Bookmark Types" styles={styles}>
+              <ToggleRow
+                label="Recs only"
+                value={!!value.recOnly}
+                onToggle={toggleRecOnly}
+                styles={styles}
+                accent={colors.accent}
+                inactiveColor={colors.textFaint}
+              />
               <ToggleRow
                 label="Only bookmarks with notes"
                 value={!!value.withNotesOnly}
                 onToggle={toggleWithNotesOnly}
+                styles={styles}
+                accent={colors.accent}
+                inactiveColor={colors.textFaint}
               />
             </Section>
           ) : null}
@@ -398,7 +424,11 @@ const AO3FilterPanel: React.FC<Props> = ({ visible, onClose, kind, facets, value
 
 /* ------------------------------------------------------------------ */
 
-const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+const Section: React.FC<{ title: string; children: React.ReactNode; styles: AO3FilterPanelStyles }> = ({
+  title,
+  children,
+  styles,
+}) => (
   <View style={styles.section}>
     <Text style={styles.sectionTitle}>{title}</Text>
     {children}
@@ -409,29 +439,36 @@ const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title
 // stable onSelect + this item's own (unchanging) value — so a tap only ever
 // causes the tapped chip and whichever chip was previously active to
 // re-render, not every chip in the row.
-const Chip: React.FC<{ label: string; value: string; active?: boolean; onSelect: (value: string) => void }> =
-  React.memo(({ label, value, active, onSelect }) => {
-    const handlePress = useCallback(() => onSelect(value), [onSelect, value]);
-    return (
-      <TouchableOpacity style={[styles.chip, active && styles.chipActive]} onPress={handlePress}>
-        <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
-      </TouchableOpacity>
-    );
-  });
+const Chip: React.FC<{
+  label: string;
+  value: string;
+  active?: boolean;
+  onSelect: (value: string) => void;
+  styles: AO3FilterPanelStyles;
+}> = React.memo(({ label, value, active, onSelect, styles }) => {
+  const handlePress = useCallback(() => onSelect(value), [onSelect, value]);
+  return (
+    <TouchableOpacity style={[styles.chip, active && styles.chipActive]} onPress={handlePress}>
+      <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
+    </TouchableOpacity>
+  );
+});
 
 const TriStateChip: React.FC<{
   option: AO3FilterFacetOption;
   tagType: AO3FacetTagType;
   state: TriState;
   onToggle: (tagType: AO3FacetTagType, id: string) => void;
-}> = React.memo(({ option, tagType, state, onToggle }) => {
+  styles: AO3FilterPanelStyles;
+  accentText: string;
+}> = React.memo(({ option, tagType, state, onToggle, styles, accentText }) => {
   const handlePress = useCallback(() => onToggle(tagType, option.id), [onToggle, tagType, option.id]);
   return (
     <TouchableOpacity
       style={[styles.chip, state === "include" && styles.chipInclude, state === "exclude" && styles.chipExclude]}
       onPress={handlePress}
     >
-      {state === "include" ? <Ionicons name="add" size={13} color="#000" style={styles.chipIcon} /> : null}
+      {state === "include" ? <Ionicons name="add" size={13} color={accentText} style={styles.chipIcon} /> : null}
       {state === "exclude" ? <Ionicons name="remove" size={13} color="#fff" style={styles.chipIcon} /> : null}
       <Text
         style={[
@@ -451,11 +488,14 @@ const FacetCheckboxRow: React.FC<{
   option: AO3FilterFacetOption;
   checked: boolean;
   onToggle: (id: string) => void;
-}> = React.memo(({ option, checked, onToggle }) => {
+  styles: AO3FilterPanelStyles;
+  accent: string;
+  inactiveColor: string;
+}> = React.memo(({ option, checked, onToggle, styles, accent, inactiveColor }) => {
   const handlePress = useCallback(() => onToggle(option.id), [onToggle, option.id]);
   return (
     <TouchableOpacity style={styles.checkboxRow} onPress={handlePress}>
-      <Ionicons name={checked ? "checkbox" : "square-outline"} size={20} color={checked ? "#7ec14b" : "#666"} />
+      <Ionicons name={checked ? "checkbox" : "square-outline"} size={20} color={checked ? accent : inactiveColor} />
       <Text style={styles.checkboxLabel}>
         {option.name}
         {option.count !== undefined ? ` (${option.count})` : ""}
@@ -464,18 +504,23 @@ const FacetCheckboxRow: React.FC<{
   );
 });
 
-const ToggleRow: React.FC<{ label: string; value: boolean; onToggle: () => void }> = React.memo(
-  ({ label, value, onToggle }) => (
-    <TouchableOpacity style={styles.checkboxRow} onPress={onToggle}>
-      <Ionicons name={value ? "checkbox" : "square-outline"} size={20} color={value ? "#7ec14b" : "#666"} />
-      <Text style={styles.checkboxLabel}>{label}</Text>
-    </TouchableOpacity>
-  ),
-);
+const ToggleRow: React.FC<{
+  label: string;
+  value: boolean;
+  onToggle: () => void;
+  styles: AO3FilterPanelStyles;
+  accent: string;
+  inactiveColor: string;
+}> = React.memo(({ label, value, onToggle, styles, accent, inactiveColor }) => (
+  <TouchableOpacity style={styles.checkboxRow} onPress={onToggle}>
+    <Ionicons name={value ? "checkbox" : "square-outline"} size={20} color={value ? accent : inactiveColor} />
+    <Text style={styles.checkboxLabel}>{label}</Text>
+  </TouchableOpacity>
+));
 
 /* ------------------------------------------------------------------ */
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   // The app's own header bar (Ao3Header) renders as a sibling above whichever
   // screen is active, with zIndex/elevation 10, so it can stay pinned over
   // the scrolling content underneath it. Without a higher stacking value of
@@ -494,9 +539,9 @@ const styles = StyleSheet.create({
     bottom: 0,
     right: 0,
     width: PANEL_WIDTH,
-    backgroundColor: "#111",
+    backgroundColor: colors.surface,
     borderLeftWidth: 1,
-    borderLeftColor: "#222",
+    borderLeftColor: colors.border,
   },
   header: {
     flexDirection: "row",
@@ -505,10 +550,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#222",
+    borderBottomColor: colors.border,
   },
   headerTitle: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 17,
     fontWeight: "700",
   },
@@ -532,7 +577,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   sectionTitle: {
-    color: "#ccc",
+    color: colors.textMuted,
     fontSize: 13,
     fontWeight: "700",
     textTransform: "uppercase",
@@ -549,18 +594,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: "#1a1a1a",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: colors.border,
     gap: 4,
   },
   chipActive: {
-    backgroundColor: "#7ec14b",
-    borderColor: "#7ec14b",
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
   },
   chipInclude: {
-    backgroundColor: "#7ec14b",
-    borderColor: "#7ec14b",
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
   },
   chipExclude: {
     backgroundColor: "#a33",
@@ -570,15 +615,15 @@ const styles = StyleSheet.create({
     marginRight: -2,
   },
   chipText: {
-    color: "#ccc",
+    color: colors.textMuted,
     fontSize: 13,
   },
   chipTextActive: {
-    color: "#000",
+    color: colors.accentText,
     fontWeight: "700",
   },
   chipTextInclude: {
-    color: "#000",
+    color: colors.accentText,
     fontWeight: "700",
   },
   chipTextExclude: {
@@ -586,13 +631,13 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   textInput: {
-    backgroundColor: "#1a1a1a",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: colors.border,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    color: "#fff",
+    color: colors.text,
     fontSize: 14,
   },
   rangeRow: {
@@ -609,7 +654,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   checkboxLabel: {
-    color: "#ddd",
+    color: colors.textMuted,
     fontSize: 14,
     flexShrink: 1,
   },
@@ -618,28 +663,28 @@ const styles = StyleSheet.create({
     gap: 10,
     padding: 16,
     borderTopWidth: 1,
-    borderTopColor: "#222",
+    borderTopColor: colors.border,
   },
   clearBtn: {
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.border,
   },
   clearBtnText: {
-    color: "#ccc",
+    color: colors.textMuted,
     fontWeight: "600",
   },
   applyBtn: {
     flex: 1,
-    backgroundColor: "#7ec14b",
+    backgroundColor: colors.accent,
     borderRadius: 8,
     paddingVertical: 12,
     alignItems: "center",
   },
   applyBtnText: {
-    color: "#000",
+    color: colors.accentText,
     fontWeight: "700",
   },
 });

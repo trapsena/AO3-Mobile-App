@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -21,6 +21,7 @@ import {
 } from "../api/ao3BookmarkEdit";
 import { fetchCollectionAutocomplete } from "../api/ao3Autocomplete";
 import TagAutocompleteInput from "./TagAutocompleteInput";
+import { ThemeColors, useTheme } from "../contexts/ThemeContext";
 
 interface Props {
   visible: boolean;
@@ -35,6 +36,8 @@ interface Props {
 }
 
 const BookmarkEditModal: React.FC<Props> = ({ visible, editHref, refererUrl, onClose, onSaved }) => {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [form, setForm] = useState<AO3BookmarkEditForm | null>(null);
@@ -111,13 +114,13 @@ const BookmarkEditModal: React.FC<Props> = ({ visible, editHref, refererUrl, onC
             <View style={styles.header}>
               <Text style={styles.headerTitle}>Save a bookmark</Text>
               <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Ionicons name="close" size={22} color="#fff" />
+                <Ionicons name="close" size={22} color={colors.text} />
               </TouchableOpacity>
             </View>
 
             {loading ? (
               <View style={styles.stateBox}>
-                <ActivityIndicator size="large" color="#7ec14b" />
+                <ActivityIndicator size="large" color={colors.accent} />
                 <Text style={styles.stateText}>Loading...</Text>
               </View>
             ) : loadError ? (
@@ -134,7 +137,7 @@ const BookmarkEditModal: React.FC<Props> = ({ visible, editHref, refererUrl, onC
                     value={notes}
                     onChangeText={setNotes}
                     placeholder="Write your notes..."
-                    placeholderTextColor="#666"
+                    placeholderTextColor={colors.textFaint}
                     multiline
                     textAlignVertical="top"
                   />
@@ -153,7 +156,7 @@ const BookmarkEditModal: React.FC<Props> = ({ visible, editHref, refererUrl, onC
                   <TagAutocompleteInput
                     style={styles.textInput}
                     placeholder="Comma-separated tag names"
-                    placeholderTextColor="#666"
+                    placeholderTextColor={colors.textFaint}
                     value={tagString}
                     onChangeText={setTagString}
                   />
@@ -164,7 +167,7 @@ const BookmarkEditModal: React.FC<Props> = ({ visible, editHref, refererUrl, onC
                   <TagAutocompleteInput
                     style={styles.textInput}
                     placeholder="Comma-separated collection names"
-                    placeholderTextColor="#666"
+                    placeholderTextColor={colors.textFaint}
                     value={collectionNames}
                     onChangeText={setCollectionNames}
                     fetchSuggestions={fetchCollectionAutocomplete}
@@ -176,7 +179,7 @@ const BookmarkEditModal: React.FC<Props> = ({ visible, editHref, refererUrl, onC
                     <Ionicons
                       name={isPrivate ? "checkbox" : "square-outline"}
                       size={20}
-                      color={isPrivate ? "#7ec14b" : "#666"}
+                      color={isPrivate ? colors.accent : colors.textFaint}
                     />
                     <Text style={styles.checkLabel}>Private bookmark</Text>
                   </TouchableOpacity>
@@ -184,7 +187,7 @@ const BookmarkEditModal: React.FC<Props> = ({ visible, editHref, refererUrl, onC
                     <Ionicons
                       name={isRec ? "checkbox" : "square-outline"}
                       size={20}
-                      color={isRec ? "#7ec14b" : "#666"}
+                      color={isRec ? colors.accent : colors.textFaint}
                     />
                     <Text style={styles.checkLabel}>Rec</Text>
                   </TouchableOpacity>
@@ -203,7 +206,7 @@ const BookmarkEditModal: React.FC<Props> = ({ visible, editHref, refererUrl, onC
                   disabled={submitting}
                 >
                   {submitting ? (
-                    <ActivityIndicator size="small" color="#000" />
+                    <ActivityIndicator size="small" color={colors.accentText} />
                   ) : (
                     <Text style={styles.updateText}>Update</Text>
                   )}
@@ -217,7 +220,7 @@ const BookmarkEditModal: React.FC<Props> = ({ visible, editHref, refererUrl, onC
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
@@ -228,10 +231,10 @@ const styles = StyleSheet.create({
     maxHeight: "85%",
   },
   card: {
-    backgroundColor: "#111",
+    backgroundColor: colors.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: colors.border,
     overflow: "hidden",
   },
   header: {
@@ -241,10 +244,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#222",
+    borderBottomColor: colors.border,
   },
   headerTitle: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 16,
     fontWeight: "700",
   },
@@ -255,11 +258,11 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   stateText: {
-    color: "#999",
+    color: colors.textFaint,
     fontSize: 14,
   },
   errorText: {
-    color: "#f66",
+    color: colors.danger,
     fontSize: 14,
     textAlign: "center",
     paddingHorizontal: 16,
@@ -279,33 +282,33 @@ const styles = StyleSheet.create({
   autocompleteLayer2: { zIndex: 20, elevation: 2 },
   autocompleteLayer1: { zIndex: 10, elevation: 1 },
   label: {
-    color: "#ccc",
+    color: colors.textMuted,
     fontSize: 13,
     fontWeight: "700",
   },
   helper: {
-    color: "#8c8c8c",
+    color: colors.textFaint,
     fontSize: 12,
   },
   notesInput: {
-    backgroundColor: "#1a1a1a",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: colors.border,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: "#fff",
+    color: colors.text,
     fontSize: 14,
     minHeight: 90,
   },
   textInput: {
-    backgroundColor: "#1a1a1a",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: colors.border,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    color: "#fff",
+    color: colors.text,
     fontSize: 14,
   },
   checkRow: {
@@ -318,7 +321,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   checkLabel: {
-    color: "#ddd",
+    color: colors.textMuted,
     fontSize: 14,
   },
   footer: {
@@ -326,22 +329,22 @@ const styles = StyleSheet.create({
     gap: 10,
     padding: 16,
     borderTopWidth: 1,
-    borderTopColor: "#222",
+    borderTopColor: colors.border,
   },
   cancelBtn: {
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.border,
   },
   cancelText: {
-    color: "#ccc",
+    color: colors.textMuted,
     fontWeight: "600",
   },
   updateBtn: {
     flex: 1,
-    backgroundColor: "#7ec14b",
+    backgroundColor: colors.accent,
     borderRadius: 8,
     paddingVertical: 12,
     alignItems: "center",
@@ -350,7 +353,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   updateText: {
-    color: "#000",
+    color: colors.accentText,
     fontWeight: "700",
   },
 });

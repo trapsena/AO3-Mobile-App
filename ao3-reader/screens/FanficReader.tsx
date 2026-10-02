@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   ActivityIndicator,
@@ -17,6 +17,7 @@ import SpeechControls from "../components/SpeechControls";
 import { fetchWithSession, getSessionCookie } from "../api/ao3Auth";
 import type { ReaderHeaderInfo } from "../components/Ao3Header";
 import type { ReaderFontKey } from "../components/readerFonts";
+import { ThemeColors, useTheme } from "../contexts/ThemeContext";
 
 
 
@@ -260,6 +261,8 @@ const FanficReader: React.FC<Props> = ({
   onHeaderActionsChange,
   onScroll,
 }) => {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const webRef = useRef<any>(null);
   const readerHeaderRef = useRef<ReaderHeaderHandle>(null);
   // NOTE: this only seeds the *initial* URL. If a parent keeps this component
@@ -570,7 +573,7 @@ const FanficReader: React.FC<Props> = ({
         }}
       />
 
-      {loading && <ActivityIndicator size="large" color="#fff" style={{ marginTop: topInset + 40 }} />}
+      {loading && <ActivityIndicator size="large" color={colors.accent} style={{ marginTop: topInset + 40 }} />}
 
       <ChapterView
         htmlContent={rawContentHtml}
@@ -617,35 +620,40 @@ const FanficReader: React.FC<Props> = ({
   );
 };
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#000" },
+// Note: header/title/subtitle/modal/modalTitle/label/closeBtn/closeText below
+// are unused (this screen's own header bar and settings modal were long ago
+// replaced by ReaderHeader + the app's global Ao3Header) — left in place
+// rather than deleted as a separate cleanup, but themed anyway for
+// consistency since converting the whole block costs nothing.
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     padding: 16,
-    backgroundColor: "#111",
-    borderBottomColor: "#333",
+    backgroundColor: colors.surface,
+    borderBottomColor: colors.border,
     borderBottomWidth: 1,
   },
-  title: { color: "#fff", fontSize: 16, fontWeight: "bold" },
-  subtitle: { color: "#aaa", fontSize: 14 },
+  title: { color: colors.text, fontSize: 16, fontWeight: "bold" },
+  subtitle: { color: colors.textFaint, fontSize: 14 },
   modal: {
     flex: 1,
-    backgroundColor: "#111",
+    backgroundColor: colors.surface,
     padding: 20,
     justifyContent: "center",
   },
-  modalTitle: { color: "#fff", fontSize: 20, marginBottom: 20, textAlign: "center" },
-  label: { color: "#fff", marginTop: 15 },
+  modalTitle: { color: colors.text, fontSize: 20, marginBottom: 20, textAlign: "center" },
+  label: { color: colors.text, marginTop: 15 },
   closeBtn: {
     marginTop: 30,
-    backgroundColor: "#333",
+    backgroundColor: colors.surfaceRaised,
     padding: 10,
     alignItems: "center",
     borderRadius: 8,
   },
-  closeText: { color: "#fff", fontSize: 16 },
+  closeText: { color: colors.text, fontSize: 16 },
 });
 
 export default FanficReader;

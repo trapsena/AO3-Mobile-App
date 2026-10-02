@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { View, StyleSheet, Text, NativeScrollEvent, NativeSyntheticEvent } from "react-native";
 import AO3ListingScreen, { AO3ListingItem } from "./AO3ListingScreen";
 import { AO3Link } from "../components/AO3WorkBlurb";
+import { ThemeColors, useTheme } from "../contexts/ThemeContext";
 
 interface Props {
   username: string | null;
@@ -36,6 +37,8 @@ const HomeScreen: React.FC<Props> = ({
   onPressAuthor,
   onPressTag,
 }) => {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   if (!username) {
     return (
       <View style={styles.container}>
@@ -74,13 +77,13 @@ const HomeScreen: React.FC<Props> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: colors.background,
   },
   text: {
-    color: "#fff",
+    color: colors.text,
     textAlign: "center",
     marginTop: 40,
   },

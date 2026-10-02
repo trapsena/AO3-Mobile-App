@@ -1,8 +1,9 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { ActivityIndicator, Linking, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { AO3BookmarkData, renderCommaLinkList } from "./AO3WorkBlurb";
+import { AO3BookmarkData, createAO3WorkBlurbStyles, renderCommaLinkList } from "./AO3WorkBlurb";
 import { extractUsernameFromUsersUrl } from "../api/ao3Bookmarks";
+import { ThemeColors, useTheme } from "../contexts/ThemeContext";
 
 // The bookmarker's own info (who bookmarked it, when, their personal tags,
 // their notes) is metadata *about the bookmark*, not the work itself — shown
@@ -33,6 +34,12 @@ const BookmarkOwnerCard: React.FC<Props> = ({
   onShare,
   onPressBookmarker,
 }) => {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  // renderCommaLinkList (from AO3WorkBlurb) expects that component's own
+  // styles shape, not this card's — built here too so the bookmarker tags
+  // line stays themed consistently with the rest of the app's tag chips.
+  const commaLinkStyles = useMemo(() => createAO3WorkBlurbStyles(colors), [colors]);
   const hasByline = !!(bookmark.bookmarker || bookmark.datetime);
   const hasTags = !!(bookmark.userMeta && bookmark.userMeta.length > 0);
   const hasNotes = !!bookmark.summary;
@@ -76,7 +83,7 @@ const BookmarkOwnerCard: React.FC<Props> = ({
       {hasTags ? (
         <View style={styles.block}>
           <Text style={styles.label}>Bookmarker's Tags</Text>
-          {renderCommaLinkList(bookmark.userMeta, "muted")}
+          {renderCommaLinkList(bookmark.userMeta, "muted", undefined, commaLinkStyles)}
         </View>
       ) : null}
 
@@ -91,19 +98,19 @@ const BookmarkOwnerCard: React.FC<Props> = ({
         <View style={styles.actionsRow}>
           {actions?.editHref ? (
             <TouchableOpacity style={styles.actionBtn} onPress={() => onEdit(actions.editHref!)}>
-              <Ionicons name="pencil-outline" size={14} color="#ddd" />
+              <Ionicons name="pencil-outline" size={14} color={colors.textMuted} />
               <Text style={styles.actionText}>Edit</Text>
             </TouchableOpacity>
           ) : null}
           {actions?.addToCollectionHref ? (
             <TouchableOpacity style={styles.actionBtn} onPress={() => onAddToCollection(actions.addToCollectionHref!)}>
-              <Ionicons name="albums-outline" size={14} color="#ddd" />
+              <Ionicons name="albums-outline" size={14} color={colors.textMuted} />
               <Text style={styles.actionText}>Add to Collection</Text>
             </TouchableOpacity>
           ) : null}
           {actions?.shareHref ? (
             <TouchableOpacity style={styles.actionBtn} onPress={() => onShare(actions.shareHref!)}>
-              <Ionicons name="share-social-outline" size={14} color="#ddd" />
+              <Ionicons name="share-social-outline" size={14} color={colors.textMuted} />
               <Text style={styles.actionText}>Share</Text>
             </TouchableOpacity>
           ) : null}
@@ -114,10 +121,10 @@ const BookmarkOwnerCard: React.FC<Props> = ({
               disabled={removing}
             >
               {removing ? (
-                <ActivityIndicator size="small" color="#f66" />
+                <ActivityIndicator size="small" color={colors.danger} />
               ) : (
                 <>
-                  <Ionicons name="trash-outline" size={14} color="#f66" />
+                  <Ionicons name="trash-outline" size={14} color={colors.danger} />
                   <Text style={[styles.actionText, styles.actionTextDanger]}>Delete</Text>
                 </>
               )}
@@ -129,39 +136,39 @@ const BookmarkOwnerCard: React.FC<Props> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   card: {
     marginTop: 8,
-    backgroundColor: "#161616",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#262626",
+    borderColor: colors.border,
     borderRadius: 12,
     paddingVertical: 10,
     paddingHorizontal: 12,
     gap: 8,
   },
   byline: {
-    color: "#c7c7c7",
+    color: colors.textMuted,
     fontSize: 13,
   },
   bookmarkerLink: {
-    color: "#7ec14b",
+    color: colors.accent,
     fontWeight: "700",
   },
   date: {
-    color: "#8b8b8b",
+    color: colors.textFaint,
   },
   block: {
     gap: 4,
   },
   label: {
-    color: "#8c8c8c",
+    color: colors.textFaint,
     fontSize: 11,
     textTransform: "uppercase",
     letterSpacing: 0.7,
   },
   notes: {
-    color: "#efefef",
+    color: colors.text,
     fontSize: 14,
     lineHeight: 20,
   },
@@ -171,7 +178,7 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingTop: 4,
     borderTopWidth: 1,
-    borderTopColor: "#262626",
+    borderTopColor: colors.border,
     marginTop: 2,
   },
   actionBtn: {
@@ -181,20 +188,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: "#1c1c1c",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: colors.border,
   },
   actionBtnDanger: {
     borderColor: "rgba(198, 67, 82, 0.35)",
   },
   actionText: {
-    color: "#ddd",
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: "600",
   },
   actionTextDanger: {
-    color: "#f66",
+    color: colors.danger,
   },
 });
 

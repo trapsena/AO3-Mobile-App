@@ -14,6 +14,9 @@ import {
   ViewStyle,
 } from "react-native";
 import { AO3TagSuggestion, fetchTagAutocomplete } from "../api/ao3Autocomplete";
+import { ThemeColors, useTheme } from "../contexts/ThemeContext";
+
+type TagAutocompleteInputStyles = ReturnType<typeof createStyles>;
 
 interface Props {
   value: string;
@@ -42,6 +45,8 @@ const TagAutocompleteInput: React.FC<Props> = ({
   style,
   fetchSuggestions = fetchTagAutocomplete,
 }) => {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   // Already-committed tags render as removable chips above the text box —
   // matching AO3's own "added tag" pills — while `draft` is just whatever's
   // being typed for the *next* tag and isn't part of `value` until it's
@@ -208,13 +213,13 @@ const TagAutocompleteInput: React.FC<Props> = ({
         <View style={styles.dropdown}>
           {loading ? (
             <View style={styles.loadingRow}>
-              <ActivityIndicator size="small" color="#7ec14b" />
+              <ActivityIndicator size="small" color={colors.accent} />
             </View>
           ) : (
             <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="always" style={styles.suggestionList}>
               {suggestions.map((item) => (
                 <TouchableOpacity key={item.id} style={styles.suggestionRow} onPress={() => handleSelect(item)}>
-                  <HighlightedText text={item.name} highlight={highlightTerm} />
+                  <HighlightedText text={item.name} highlight={highlightTerm} styles={styles} />
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -225,7 +230,11 @@ const TagAutocompleteInput: React.FC<Props> = ({
   );
 };
 
-const HighlightedText: React.FC<{ text: string; highlight: string }> = ({ text, highlight }) => {
+const HighlightedText: React.FC<{ text: string; highlight: string; styles: TagAutocompleteInputStyles }> = ({
+  text,
+  highlight,
+  styles,
+}) => {
   const index = highlight ? text.toLowerCase().indexOf(highlight.toLowerCase()) : -1;
   if (index === -1) {
     return (
@@ -248,7 +257,7 @@ const HighlightedText: React.FC<{ text: string; highlight: string }> = ({ text, 
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   wrapper: {
     position: "relative",
     zIndex: 10,
@@ -262,9 +271,9 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1a1a1a",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: colors.border,
     borderRadius: 999,
     paddingLeft: 10,
     paddingRight: 4,
@@ -272,7 +281,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   chipText: {
-    color: "#eee",
+    color: colors.text,
     fontSize: 12,
   },
   chipRemoveBtn: {
@@ -280,12 +289,12 @@ const styles = StyleSheet.create({
     height: 18,
     borderRadius: 9,
     borderWidth: 1,
-    borderColor: "#444",
+    borderColor: colors.border,
     alignItems: "center",
     justifyContent: "center",
   },
   chipRemoveText: {
-    color: "#999",
+    color: colors.textFaint,
     fontSize: 11,
     lineHeight: 13,
   },
@@ -295,9 +304,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     marginTop: 4,
-    backgroundColor: "#1a1a1a",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: colors.border,
     borderRadius: 8,
     maxHeight: 240,
     overflow: "hidden",
@@ -315,14 +324,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: "#222",
+    borderBottomColor: colors.border,
   },
   suggestionText: {
-    color: "#ccc",
+    color: colors.textMuted,
     fontSize: 13,
   },
   suggestionMatch: {
-    color: "#fff",
+    color: colors.text,
     fontWeight: "700",
   },
 });

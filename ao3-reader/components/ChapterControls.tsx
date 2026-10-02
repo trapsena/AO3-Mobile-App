@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { ThemeColors, useTheme } from "../contexts/ThemeContext";
 
 interface Props {
   index: number;              // índice atual (0-based)
@@ -9,6 +10,8 @@ interface Props {
 }
 
 const ChapterControls: React.FC<Props> = ({ index, total, onPrev, onNext }) => {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   return (
     <View style={styles.container}>
       <TouchableOpacity onPress={onPrev} disabled={index <= 0} style={[styles.btn, index <= 0 && styles.btnDisabled]}>
@@ -26,12 +29,12 @@ const ChapterControls: React.FC<Props> = ({ index, total, onPrev, onNext }) => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: { flexDirection: "row", justifyContent: "space-between", padding: 10, backgroundColor: "#111" },
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
+  container: { flexDirection: "row", justifyContent: "space-between", padding: 10, backgroundColor: colors.surface },
   btn: { padding: 8 },
   btnDisabled: { opacity: 0.4 },
-  btnText: { color: "white", fontSize: 18 },
-  caption: { color: "white", alignSelf: "center" },
+  btnText: { color: colors.text, fontSize: 18 },
+  caption: { color: colors.text, alignSelf: "center" },
 });
 
 export default ChapterControls;

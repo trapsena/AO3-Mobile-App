@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { Dimensions, StyleSheet, View } from "react-native";
 import { WebView } from "react-native-webview";
 import { getReaderFontFamilyCss, loadReaderFontFaceCss, ReaderFontKey } from "./readerFonts";
+import { useTheme } from "../contexts/ThemeContext";
+import { hexToRgba } from "./colorUtils";
 
 interface Props {
   // raw HTML for the chapter body (innerHTML from AO3 extraction)
@@ -53,6 +55,7 @@ const ChapterView: React.FC<Props> = ({
   ttsActive = false,
   fontFamily = "system",
 }) => {
+  const { colors } = useTheme();
   const webRef = useRef<any>(null);
   // Populated asynchronously (base64-embedding a font file takes a moment
   // the first time it's picked) — see the comment on the `fontFamily` prop
@@ -79,7 +82,7 @@ const ChapterView: React.FC<Props> = ({
       * { box-sizing: border-box; }
       html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow-x: hidden; }
       body {
-        color:#fff; background:#000; font-size:${fontSize}px; line-height:${lineHeight}px;
+        color:${colors.text}; background:${colors.background}; font-size:${fontSize}px; line-height:${lineHeight}px;
         font-family: ${getReaderFontFamilyCss(fontFamily)};
         overflow-y: auto;
         padding-top: ${padding + topInset}px;
@@ -88,18 +91,18 @@ const ChapterView: React.FC<Props> = ({
         padding-left: ${padding}px;
       }
       p{ margin-bottom:${paragraphSpacing}px; }
-      p.current{ outline:2px solid rgba(76,209,55,0.25); padding:6px; background-color: rgba(76,209,55,0.04); }
+      p.current{ outline:2px solid ${hexToRgba(colors.accent, 0.25)}; padding:6px; background-color: ${hexToRgba(colors.accent, 0.04)}; }
       em,i{ font-style:italic; }
       strong,b{ font-weight:700; }
-      hr{ height:1px; background:#444; border:none; margin:${paragraphSpacing}px 0; }
+      hr{ height:1px; background:${colors.border}; border:none; margin:${paragraphSpacing}px 0; }
       * { -webkit-touch-callout: none; touch-action: pan-y; }
-      h3.heading{ font-size:1.05em; font-weight:700; margin:0 0 8px; padding-bottom:6px; border-bottom:1px solid #333; }
+      h3.heading{ font-size:1.05em; font-weight:700; margin:0 0 8px; padding-bottom:6px; border-bottom:1px solid ${colors.border}; }
       .preface.group blockquote.userstuff, .end.notes.module blockquote.userstuff{
-        margin:0 0 12px; padding-left:12px; border-left:2px solid #333; color:#ddd;
+        margin:0 0 12px; padding-left:12px; border-left:2px solid ${colors.border}; color:${colors.textMuted};
       }
       .preface.group blockquote.userstuff p, .end.notes.module blockquote.userstuff p{ margin-bottom:8px; }
       #summary, #notes{ margin-bottom:16px; }
-      .end.notes.module{ margin-top:28px; padding-top:14px; border-top:1px solid #333; }
+      .end.notes.module{ margin-top:28px; padding-top:14px; border-top:1px solid ${colors.border}; }
     `;
 
     const script = `

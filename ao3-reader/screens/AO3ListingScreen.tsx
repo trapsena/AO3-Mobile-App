@@ -25,6 +25,7 @@ import AO3WorkBlurb, {
 import BookmarkOwnerCard from "../components/BookmarkOwnerCard";
 import BookmarkEditModal from "../components/BookmarkEditModal";
 import type { ProfileHeaderInfo } from "../components/Ao3Header";
+import { ThemeColors, useTheme } from "../contexts/ThemeContext";
 
 const HiddenWebView = React.forwardRef<any, any>((props, ref) => (
   <View
@@ -689,6 +690,8 @@ const AO3ListingScreen: React.FC<Props> = ({
   onClose,
   onHeaderActionsChange,
 }) => {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const webRef = useRef<any>(null);
   const lastPayloadRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -995,7 +998,7 @@ const AO3ListingScreen: React.FC<Props> = ({
 
       {loading ? (
         <View style={[styles.loading, { paddingTop: contentContainerTopPadding }]}>
-          <ActivityIndicator size="large" color="#7ec14b" />
+          <ActivityIndicator size="large" color={colors.accent} />
           <Text style={styles.loadingText}>Reading blurbs...</Text>
         </View>
       ) : (
@@ -1150,25 +1153,25 @@ const AO3ListingScreen: React.FC<Props> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000",
+    backgroundColor: colors.background,
   },
   header: {
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#222",
-    backgroundColor: "#0d0d0d",
+    borderBottomColor: colors.border,
+    backgroundColor: colors.surface,
   },
   headerTitle: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 18,
     fontWeight: "700",
   },
   headerSubtitle: {
-    color: "#9a9a9a",
+    color: colors.textFaint,
     fontSize: 12,
     marginTop: 4,
   },
@@ -1182,28 +1185,28 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.border,
   },
   profileAvatarPlaceholder: {
-    backgroundColor: "#1c1c1c",
+    backgroundColor: colors.surfaceAlt,
   },
   profileUsername: {
     flex: 1,
-    color: "#fff",
+    color: colors.text,
     fontSize: 20,
     fontWeight: "700",
   },
   fandomsBox: {
-    backgroundColor: "#111",
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: colors.border,
     borderRadius: 16,
     padding: 16,
     gap: 12,
     marginBottom: 16,
   },
   fandomsTitle: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 16,
     fontWeight: "700",
   },
@@ -1215,8 +1218,8 @@ const styles = StyleSheet.create({
   fandomPill: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1c1c1c",
-    borderColor: "#343434",
+    backgroundColor: colors.surfaceAlt,
+    borderColor: colors.border,
     borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 10,
@@ -1225,13 +1228,13 @@ const styles = StyleSheet.create({
   },
   fandomPillText: {
     flexShrink: 1,
-    color: "#d8d8d8",
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: "600",
   },
   fandomPillCount: {
     flexShrink: 0,
-    color: "#d8d8d8",
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: "600",
   },
@@ -1244,15 +1247,15 @@ const styles = StyleSheet.create({
   },
   bookmarksCountBtn: {
     alignSelf: "flex-start",
-    backgroundColor: "#242424",
+    backgroundColor: colors.surfaceRaised,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.border,
   },
   bookmarksCountBtnText: {
-    color: "#ddd",
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: "700",
   },
@@ -1263,7 +1266,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   loadingText: {
-    color: "#bfbfbf",
+    color: colors.textMuted,
     fontSize: 14,
   },
   listContent: {
@@ -1272,7 +1275,7 @@ const styles = StyleSheet.create({
   },
   groupTitle: {
     flexShrink: 1,
-    color: "#7ec14b",
+    color: colors.accent,
     fontSize: 16,
     fontWeight: "700",
   },
@@ -1285,13 +1288,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   emptyTitle: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 16,
     fontWeight: "700",
     marginBottom: 8,
   },
   emptyBody: {
-    color: "#9b9b9b",
+    color: colors.textFaint,
     fontSize: 13,
     textAlign: "center",
     lineHeight: 18,

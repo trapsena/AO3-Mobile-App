@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { View, TouchableOpacity, Text, StyleSheet } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { TTSServiceFactory, TTSSettings } from "./geminiTTS";
+import { ThemeColors, useTheme } from "../contexts/ThemeContext";
 
 interface Props {
   paragraphs: string[];
@@ -17,8 +18,10 @@ const SpeechControls: React.FC<Props> = ({
   paragraphs, 
   onClose, 
   index, 
-  onIndexChange 
+  onIndexChange
 }) => {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [internalIndex, setInternalIndex] = useState(0);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [ttsSettings, setTtsSettings] = useState<TTSSettings>({
@@ -164,23 +167,23 @@ const SpeechControls: React.FC<Props> = ({
   return (
     <View style={styles.container}>
       <TouchableOpacity onPress={onClose}>
-        <Ionicons name="close" size={24} color="white" />
+        <Ionicons name="close" size={24} color={colors.text} />
       </TouchableOpacity>
 
       <TouchableOpacity onPress={handlePrev}>
-        <Ionicons name="play-back" size={28} color="white" />
+        <Ionicons name="play-back" size={28} color={colors.text} />
       </TouchableOpacity>
 
       <TouchableOpacity onPress={handlePlayPause}>
         <Ionicons
           name={isSpeaking ? "pause-circle" : "play-circle"}
           size={36}
-          color="white"
+          color={colors.text}
         />
       </TouchableOpacity>
 
       <TouchableOpacity onPress={handleNext}>
-        <Ionicons name="play-forward" size={28} color="white" />
+        <Ionicons name="play-forward" size={28} color={colors.text} />
       </TouchableOpacity>
 
       <Text style={styles.index}>
@@ -190,19 +193,19 @@ const SpeechControls: React.FC<Props> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
-    backgroundColor: "rgba(0,0,0,0.9)",
+    backgroundColor: colors.surface,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-around",
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderTopWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.border,
   },
   index: {
-    color: "#aaa",
+    color: colors.textMuted,
     fontSize: 14,
   },
 });

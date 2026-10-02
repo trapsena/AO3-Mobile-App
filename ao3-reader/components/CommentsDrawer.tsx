@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect, useRef } from "react";
+import React, { useCallback, useState, useEffect, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -17,11 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { fetchWithSession } from "../api/ao3Auth";
 import { fetchReplyForm, postReplyComment, toAbsoluteAO3Url, AO3ReplyForm } from "../api/ao3Comments";
 import InlineReplyForm from "./InlineReplyForm";
-
-// This drawer's own accent color (used elsewhere throughout its styles) —
-// passed into the shared InlineReplyForm so its Comment button matches the
-// same green already used for author names.
-const ACCENT_COLOR = "#7ec14b";
+import { ThemeColors, useTheme } from "../contexts/ThemeContext";
 
 interface Reply {
   id: string;
@@ -57,6 +53,8 @@ interface CommentsDrawerProps {
 const SCREEN_HEIGHT = Dimensions.get("window").height;
 
 const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, onClose }) => {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(false);
@@ -501,7 +499,7 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
               style={[styles.actionBtn, replyingId === reply.id && styles.actionBtnActive]}
               onPress={() => handleToggleReply(reply.id, reply.replyHref)}
             >
-              <Ionicons name="arrow-undo-outline" size={13} color="#ddd" />
+              <Ionicons name="arrow-undo-outline" size={13} color={colors.textMuted} />
               <Text style={styles.actionText}>{replyingId === reply.id ? "Fechar" : "Responder"}</Text>
             </TouchableOpacity>
           </View>
@@ -513,7 +511,7 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
               submitting={replySubmitting}
               onSubmit={handleSubmitReply}
               onCancel={() => handleToggleReply(reply.id, reply.replyHref)}
-              accentColor={ACCENT_COLOR}
+              accentColor={colors.accent}
             />
           ) : null}
         </View>
@@ -553,18 +551,18 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <MessageCircle color="#7ec14b" size={20} />
+            <MessageCircle color={colors.accent} size={20} />
             <Text style={styles.title}>Comentários ({totalComments})</Text>
           </View>
           <TouchableOpacity onPress={onClose}>
-            <X color="#fff" size={22} />
+            <X color={colors.text} size={22} />
           </TouchableOpacity>
         </View>
 
         {/* Content */}
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#7ec14b" />
+            <ActivityIndicator size="large" color={colors.accent} />
             <Text style={styles.loadingText}>Carregando comentários...</Text>
           </View>
         ) : comments.length === 0 ? (
@@ -606,7 +604,7 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
                         style={[styles.actionBtn, replyingId === comment.id && styles.actionBtnActive]}
                         onPress={() => handleToggleReply(comment.id, comment.replyHref)}
                       >
-                        <Ionicons name="arrow-undo-outline" size={14} color="#ddd" />
+                        <Ionicons name="arrow-undo-outline" size={14} color={colors.textMuted} />
                         <Text style={styles.actionText}>
                           {replyingId === comment.id ? "Fechar" : "Responder"}
                         </Text>
@@ -620,7 +618,7 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
                         submitting={replySubmitting}
                         onSubmit={handleSubmitReply}
                         onCancel={() => handleToggleReply(comment.id, comment.replyHref)}
-                        accentColor={ACCENT_COLOR}
+                        accentColor={colors.accent}
                       />
                     ) : null}
                   </View>
@@ -666,7 +664,7 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -677,7 +675,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: "#111",
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: SCREEN_HEIGHT * 0.85,
@@ -690,7 +688,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "#333",
+    borderBottomColor: colors.border,
   },
   headerLeft: {
     flexDirection: "row",
@@ -698,7 +696,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   title: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 16,
     fontWeight: "bold",
   },
@@ -708,7 +706,7 @@ const styles = StyleSheet.create({
     paddingVertical: 60,
   },
   loadingText: {
-    color: "#999",
+    color: colors.textFaint,
     marginTop: 12,
     fontSize: 14,
   },
@@ -718,7 +716,7 @@ const styles = StyleSheet.create({
     paddingVertical: 60,
   },
   emptyText: {
-    color: "#666",
+    color: colors.textFaint,
     fontSize: 14,
   },
   commentsList: {
@@ -731,15 +729,15 @@ const styles = StyleSheet.create({
   },
   // Comment / reply card — matches InboxCommentCard's black-card look.
   card: {
-    backgroundColor: "#111",
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: colors.border,
     borderRadius: 16,
     padding: 14,
     gap: 10,
   },
   replyCard: {
-    backgroundColor: "#0f0f0f",
+    backgroundColor: colors.surfaceAlt,
   },
   topRow: {
     flexDirection: "row",
@@ -754,49 +752,49 @@ const styles = StyleSheet.create({
     height: 52,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.border,
   },
   replyAvatar: {
     width: 28,
     height: 28,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.border,
   },
   avatarPlaceholder: {
-    backgroundColor: "#222",
+    backgroundColor: colors.surfaceRaised,
   },
   byline: {
     fontSize: 13,
   },
   username: {
-    color: "#7ec14b",
+    color: colors.accent,
     fontWeight: "bold",
   },
   on: {
-    color: "#888",
+    color: colors.textFaint,
   },
   target: {
-    color: "#ccc",
+    color: colors.textMuted,
     textDecorationLine: "underline",
   },
   replyByline: {
-    color: "#7ec14b",
+    color: colors.accent,
     fontWeight: "bold",
     fontSize: 13,
   },
   date: {
-    color: "#888",
+    color: colors.textFaint,
     fontSize: 11,
     marginTop: 2,
   },
   commentText: {
-    color: "#efefef",
+    color: colors.text,
     fontSize: 14,
     lineHeight: 20,
   },
   replyBody: {
-    color: "#ddd",
+    color: colors.textMuted,
     fontSize: 13,
     lineHeight: 18,
   },
@@ -804,7 +802,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     borderTopWidth: 1,
-    borderTopColor: "#222",
+    borderTopColor: colors.border,
     paddingTop: 10,
   },
   badges: {
@@ -817,15 +815,15 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 999,
-    backgroundColor: "#1c1c1c",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.border,
   },
   actionBtnActive: {
-    borderColor: "#7ec14b",
+    borderColor: colors.accent,
   },
   actionText: {
-    color: "#ddd",
+    color: colors.textMuted,
     fontSize: 12,
     fontWeight: "500",
   },
@@ -834,14 +832,14 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginLeft: 30,
     borderLeftWidth: 2,
-    borderLeftColor: "#333",
+    borderLeftColor: colors.border,
     paddingLeft: 12,
   },
   nestedRepliesContainer: {
     marginTop: 2,
     marginLeft: 0,
     borderLeftWidth: 1,
-    borderLeftColor: "#222",
+    borderLeftColor: colors.border,
   },
   // Pagination
   pagination: {
@@ -851,26 +849,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: "#333",
+    borderTopColor: colors.border,
   },
   pageButton: {
     paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: "#222",
+    backgroundColor: colors.surfaceRaised,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.border,
   },
   pageButtonDisabled: {
     opacity: 0.5,
   },
   pageButtonText: {
-    color: "#7ec14b",
+    color: colors.accent,
     fontSize: 12,
     fontWeight: "500",
   },
   pageIndicator: {
-    color: "#999",
+    color: colors.textFaint,
     fontSize: 12,
   },
 });

@@ -27,6 +27,7 @@ import Ao3Header, {
 import { AO3Link } from "./components/AO3WorkBlurb";
 import { extractUsernameFromUsersUrl } from "./api/ao3Bookmarks";
 import { useAO3Session } from "./hooks/useao3Auth";
+import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 
 // A snapshot of "where we came from" — pushed onto AppContent's back stack
 // every time openReader/openBookmarks/openProfile navigate to a new screen,
@@ -44,6 +45,8 @@ interface NavEntry {
 
 const AppContent: React.FC = () => {
   const { session, username, loading, login, logout } = useAO3Session();
+  const { colors, mode } = useTheme();
+  const statusBarStyle = mode === "dark" ? "light-content" : "dark-content";
   const [activeTab, setActiveTab] = useState<Ao3Tab>("home");
   const [readerUrl, setReaderUrl] = useState<string | null>(null);
   const [bookmarksUsername, setBookmarksUsername] = useState<string | null>(null);
@@ -222,9 +225,9 @@ const AppContent: React.FC = () => {
 
   if (loading) {
     return (
-      <View style={styles.container}>
-        <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
-        <ActivityIndicator size="large" color="#fff" style={{ marginTop: insets.top + 40 }} />
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar translucent backgroundColor="transparent" barStyle={statusBarStyle} />
+        <ActivityIndicator size="large" color={colors.accent} style={{ marginTop: insets.top + 40 }} />
       </View>
     );
   }
@@ -232,16 +235,16 @@ const AppContent: React.FC = () => {
   // if there's no session, show LoginScreen; once login completes, useAO3Session will update session
   if (!session) {
     return (
-      <View style={styles.container}>
-        <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar translucent backgroundColor="transparent" barStyle={statusBarStyle} />
         <LoginScreen onLogin={login} />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar translucent backgroundColor="transparent" barStyle={statusBarStyle} />
 
       {/* Edge-to-edge content: each screen's list scrolls underneath the
           transparent status bar, with its own top padding leaving room for
@@ -402,7 +405,9 @@ const AppContent: React.FC = () => {
 
 const App: React.FC = () => (
   <SafeAreaProvider>
-    <AppContent />
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
   </SafeAreaProvider>
 );
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useImperativeHandle, forwardRef } from "react";
+import React, { useState, useEffect, useImperativeHandle, useMemo, forwardRef } from "react";
 import {
   View,
   Text,
@@ -17,6 +17,7 @@ import { X } from "lucide-react-native";
 import CommentsDrawer from "./CommentsDrawer";
 import type { TTSProvider } from "./geminiTTS";
 import { getReaderFontNativeFamilyName, READER_FONT_OPTIONS, ReaderFontKey } from "./readerFonts";
+import { ThemeColors, useTheme } from "../contexts/ThemeContext";
 
 interface TTSSettings {
   provider: TTSProvider;
@@ -79,6 +80,8 @@ const ReaderHeader = forwardRef<ReaderHeaderHandle, ReaderHeaderProps>(({
   currentUrl = "",
   onConfigChange,
 }, ref) => {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [visible, setVisible] = useState(false);
   const [commentsVisible, setCommentsVisible] = useState(false);
   // Loads the same bundled font files natively (independent of the WebView
@@ -215,7 +218,7 @@ const ReaderHeader = forwardRef<ReaderHeaderHandle, ReaderHeaderProps>(({
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Configurações de Leitura</Text>
               <TouchableOpacity onPress={() => setVisible(false)}>
-                <X color="#fff" size={20} />
+                <X color={colors.text} size={20} />
               </TouchableOpacity>
             </View>
 
@@ -364,7 +367,7 @@ const ReaderHeader = forwardRef<ReaderHeaderHandle, ReaderHeaderProps>(({
 
                   {loadingVoices ? (
                     <View style={styles.loadingContainer}>
-                      <ActivityIndicator size="large" color="#fff" />
+                      <ActivityIndicator size="large" color={colors.accent} />
                       <Text style={styles.loadingText}>Carregando vozes...</Text>
                     </View>
                   ) : (
@@ -414,7 +417,7 @@ const ReaderHeader = forwardRef<ReaderHeaderHandle, ReaderHeaderProps>(({
                               step={0.1}
                               value={ttsSettings.rate}
                               onValueChange={handleRateChange}
-                              minimumTrackTintColor="#fff"
+                              minimumTrackTintColor={colors.text}
                             />
                           </View>
 
@@ -426,7 +429,7 @@ const ReaderHeader = forwardRef<ReaderHeaderHandle, ReaderHeaderProps>(({
                               step={0.1}
                               value={ttsSettings.pitch}
                               onValueChange={handlePitchChange}
-                              minimumTrackTintColor="#fff"
+                              minimumTrackTintColor={colors.text}
                             />
                           </View>
                         </>
@@ -442,7 +445,7 @@ const ReaderHeader = forwardRef<ReaderHeaderHandle, ReaderHeaderProps>(({
                               value={ttsSettings.geminiApiKey || ""}
                               onChangeText={handleGeminiApiKeyChange}
                               placeholder="AIza..."
-                              placeholderTextColor="#666"
+                              placeholderTextColor={colors.textFaint}
                               secureTextEntry
                               autoCapitalize="none"
                               autoCorrect={false}
@@ -502,14 +505,14 @@ const ReaderHeader = forwardRef<ReaderHeaderHandle, ReaderHeaderProps>(({
 });
 ReaderHeader.displayName = "ReaderHeader";
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.7)",
     justifyContent: "flex-end",
   },
   modal: {
-    backgroundColor: "#222",
+    backgroundColor: colors.surfaceRaised,
     padding: 16,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
@@ -522,14 +525,14 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   modalTitle: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 16,
     fontWeight: "bold",
   },
   tabsContainer: {
     flexDirection: "row",
     borderBottomWidth: 1,
-    borderBottomColor: "#333",
+    borderBottomColor: colors.border,
     marginBottom: 12,
   },
   tab: {
@@ -541,15 +544,15 @@ const styles = StyleSheet.create({
     borderBottomColor: "transparent",
   },
   activeTab: {
-    borderBottomColor: "#4dd0e1",
+    borderBottomColor: colors.accent,
   },
   tabText: {
-    color: "#999",
+    color: colors.textFaint,
     fontSize: 14,
     fontWeight: "600",
   },
   activeTabText: {
-    color: "#4dd0e1",
+    color: colors.accent,
   },
   contentContainer: {
     maxHeight: 400,
@@ -558,7 +561,7 @@ const styles = StyleSheet.create({
     marginVertical: 12,
   },
   label: {
-    color: "#ccc",
+    color: colors.textMuted,
     marginBottom: 8,
     fontSize: 14,
     fontWeight: "500",
@@ -569,7 +572,7 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
   },
   loadingText: {
-    color: "#999",
+    color: colors.textFaint,
     marginTop: 12,
     fontSize: 14,
   },
@@ -579,68 +582,68 @@ const styles = StyleSheet.create({
   },
   providerButton: {
     flex: 1,
-    backgroundColor: "#333",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#444",
+    borderColor: colors.border,
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: "center",
   },
   providerButtonActive: {
-    backgroundColor: "#4dd0e1",
-    borderColor: "#4dd0e1",
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
   },
   providerButtonText: {
-    color: "#999",
+    color: colors.textFaint,
     fontSize: 14,
     fontWeight: "600",
   },
   providerButtonTextActive: {
-    color: "#000",
+    color: colors.accentText,
   },
   voicesContainer: {
     marginHorizontal: -5,
     paddingHorizontal: 5,
   },
   voiceButton: {
-    backgroundColor: "#333",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#444",
+    borderColor: colors.border,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
     marginHorizontal: 5,
   },
   voiceButtonActive: {
-    backgroundColor: "#4dd0e1",
-    borderColor: "#4dd0e1",
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
   },
   voiceButtonText: {
-    color: "#999",
+    color: colors.textFaint,
     fontSize: 12,
     fontWeight: "500",
   },
   voiceButtonTextActive: {
-    color: "#000",
+    color: colors.accentText,
   },
   noVoicesText: {
-    color: "#666",
+    color: colors.textFaint,
     fontSize: 14,
     textAlign: "center",
     paddingVertical: 10,
   },
   input: {
-    backgroundColor: "#333",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#444",
+    borderColor: colors.border,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: "#fff",
+    color: colors.text,
     fontSize: 14,
   },
   hint: {
-    color: "#666",
+    color: colors.textFaint,
     fontSize: 12,
     marginTop: 6,
     fontStyle: "italic",

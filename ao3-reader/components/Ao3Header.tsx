@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Easing,
@@ -17,6 +17,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getUserIconUrl } from "../api/ao3Auth";
+import { ThemeColors, useTheme } from "../contexts/ThemeContext";
+import ThemeSettingsModal from "./ThemeSettingsModal";
 
 export type Ao3Tab =
   | "home"
@@ -181,6 +183,8 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
 }) => {
   const insets = useSafeAreaInsets();
   const headerHeight = HEADER_CONTENT_HEIGHT + insets.top;
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   const [iconUrl, setIconUrl] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -189,6 +193,10 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
   // separate, much simpler Modal than the drawer above (no drag/animation
   // needed, just show/hide on tap).
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  // The "Color Theme" drawer item's own picker — a separate Modal rendered
+  // alongside the drawer's, opened without closing the drawer first (so
+  // tapping its own close/Select button is what dismisses both at once).
+  const [themeModalOpen, setThemeModalOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -249,6 +257,11 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
   const handleLogout = () => {
     closeMenu();
     onLogout();
+  };
+
+  const handleOpenThemeSettings = () => {
+    closeMenu();
+    setThemeModalOpen(true);
   };
 
   // The avatar (which opens the drawer) only makes sense on the Home/profile
@@ -407,11 +420,11 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           {activeTab !== "home" ? (
-            <Ionicons name="arrow-back" size={24} color="#fff" />
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
           ) : iconUrl ? (
             <Image source={{ uri: iconUrl }} style={styles.avatarImage} />
           ) : (
-            <Ionicons name="person-circle-outline" size={32} color="#fff" />
+            <Ionicons name="person-circle-outline" size={32} color={colors.text} />
           )}
         </TouchableOpacity>
 
@@ -430,14 +443,14 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
                 <Ionicons
                   name="headset"
                   size={20}
-                  color={readerHeaderInfo.isTtsActive ? "#4cd137" : "#fff"}
+                  color={readerHeaderInfo.isTtsActive ? "#4cd137" : colors.text}
                 />
               </TouchableOpacity>
               <TouchableOpacity onPress={readerHeaderInfo.onOpenComments} style={styles.actionBtn}>
-                <Ionicons name="chatbubble-outline" size={20} color="#fff" />
+                <Ionicons name="chatbubble-outline" size={20} color={colors.text} />
               </TouchableOpacity>
               <TouchableOpacity onPress={readerHeaderInfo.onOpenSettings} style={styles.actionBtn}>
-                <Ionicons name="settings-outline" size={20} color="#fff" />
+                <Ionicons name="settings-outline" size={20} color={colors.text} />
               </TouchableOpacity>
             </View>
           </>
@@ -454,7 +467,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
                 <Ionicons
                   name="time-outline"
                   size={14}
-                  color={historyHeaderInfo.activeSubTab === "history" ? "#000" : "#ddd"}
+                  color={historyHeaderInfo.activeSubTab === "history" ? colors.accentText : colors.textMuted}
                 />
                 <Text
                   style={[
@@ -476,7 +489,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
                 <Ionicons
                   name="bookmark-outline"
                   size={14}
-                  color={historyHeaderInfo.activeSubTab === "to-read" ? "#000" : "#ddd"}
+                  color={historyHeaderInfo.activeSubTab === "to-read" ? colors.accentText : colors.textMuted}
                 />
                 <Text
                   style={[
@@ -490,7 +503,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
               </TouchableOpacity>
             </View>
             <TouchableOpacity onPress={historyHeaderInfo.onClearHistory} style={styles.actionBtn}>
-              <Ionicons name="trash-outline" size={20} color="#f66" />
+              <Ionicons name="trash-outline" size={20} color={colors.danger} />
             </TouchableOpacity>
           </>
         ) : activeTab === "inbox" && inboxHeaderInfo ? (
@@ -503,7 +516,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
               style={styles.avatarBtn}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Ionicons name="options-outline" size={22} color="#fff" />
+              <Ionicons name="options-outline" size={22} color={colors.text} />
             </TouchableOpacity>
           </>
         ) : activeTab === "bookmarks" && bookmarksHeaderInfo ? (
@@ -516,7 +529,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
               style={styles.avatarBtn}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Ionicons name="options-outline" size={22} color="#fff" />
+              <Ionicons name="options-outline" size={22} color={colors.text} />
             </TouchableOpacity>
           </>
         ) : activeTab === "works" && worksHeaderInfo ? (
@@ -529,7 +542,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
               style={styles.avatarBtn}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Ionicons name="options-outline" size={22} color="#fff" />
+              <Ionicons name="options-outline" size={22} color={colors.text} />
             </TouchableOpacity>
           </>
         ) : activeTab === "tagWorks" && tagWorksHeaderInfo ? (
@@ -542,7 +555,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
               style={styles.avatarBtn}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Ionicons name="options-outline" size={22} color="#fff" />
+              <Ionicons name="options-outline" size={22} color={colors.text} />
             </TouchableOpacity>
           </>
         ) : activeTab === "profile" && profileHeaderInfo ? (
@@ -556,7 +569,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
                 style={styles.avatarBtn}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Ionicons name="ellipsis-vertical" size={20} color="#fff" />
+                <Ionicons name="ellipsis-vertical" size={20} color={colors.text} />
               </TouchableOpacity>
             ) : (
               <View style={styles.avatarBtn} />
@@ -564,7 +577,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
           </>
         ) : activeTab === "allFandoms" && allFandomsHeaderInfo ? (
           <View style={styles.searchRow}>
-            <Ionicons name="search" size={16} color="#888" style={styles.searchIcon} />
+            <Ionicons name="search" size={16} color={colors.textFaint} style={styles.searchIcon} />
             <TextInput
               style={styles.searchInput}
               value={allFandomsHeaderInfo.searchQuery}
@@ -580,7 +593,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
                 onPress={() => allFandomsHeaderInfo.onSearchQueryChange("")}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Ionicons name="close-circle" size={16} color="#888" />
+                <Ionicons name="close-circle" size={16} color={colors.textFaint} />
               </TouchableOpacity>
             ) : null}
           </View>
@@ -615,7 +628,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
               {iconUrl ? (
                 <Image source={{ uri: iconUrl }} style={styles.panelAvatarImage} />
               ) : (
-                <Ionicons name="person-circle-outline" size={48} color="#fff" />
+                <Ionicons name="person-circle-outline" size={48} color={colors.text} />
               )}
               <Text style={styles.panelUsername} numberOfLines={1}>
                 {username || "Not signed in"}
@@ -633,7 +646,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
                 <Ionicons
                   name={item.icon}
                   size={22}
-                  color={activeTab === item.key ? "#7EC14B" : "#ddd"}
+                  color={activeTab === item.key ? colors.accent : colors.textMuted}
                 />
                 <Text
                   style={[styles.panelItemLabel, activeTab === item.key && styles.panelItemLabelActive]}
@@ -643,15 +656,22 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
               </TouchableOpacity>
             ))}
 
+            <TouchableOpacity style={styles.panelItem} onPress={handleOpenThemeSettings}>
+              <Ionicons name="color-palette" size={22} color={colors.textMuted} />
+              <Text style={styles.panelItemLabel}>Color Theme</Text>
+            </TouchableOpacity>
+
             <View style={styles.panelSpacer} />
 
             <TouchableOpacity style={styles.panelItem} onPress={handleLogout}>
-              <Ionicons name="log-out" size={22} color="#f66" />
-              <Text style={[styles.panelItemLabel, { color: "#f66" }]}>Logout</Text>
+              <Ionicons name="log-out" size={22} color={colors.danger} />
+              <Text style={[styles.panelItemLabel, { color: colors.danger }]}>Logout</Text>
             </TouchableOpacity>
           </Animated.View>
         </View>
       </Modal>
+
+      <ThemeSettingsModal visible={themeModalOpen} onClose={() => setThemeModalOpen(false)} />
 
       <Modal
         visible={profileMenuOpen && activeTab === "profile" && !!profileHeaderInfo?.actions}
@@ -672,7 +692,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
             <Ionicons
               name={profileHeaderInfo?.actions?.isSubscribed ? "heart" : "heart-outline"}
               size={16}
-              color="#ddd"
+              color={colors.textMuted}
             />
             <Text style={styles.profileMenuItemLabel}>
               {profileHeaderInfo?.actions?.isSubscribed ? "Unsubscribe" : "Subscribe"}
@@ -686,7 +706,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
               setProfileMenuOpen(false);
             }}
           >
-            <Ionicons name="volume-mute-outline" size={16} color="#ddd" />
+            <Ionicons name="volume-mute-outline" size={16} color={colors.textMuted} />
             <Text style={styles.profileMenuItemLabel}>Mute</Text>
           </TouchableOpacity>
           <View style={styles.profileMenuDivider} />
@@ -697,8 +717,8 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
               setProfileMenuOpen(false);
             }}
           >
-            <Ionicons name="ban-outline" size={16} color="#f66" />
-            <Text style={[styles.profileMenuItemLabel, { color: "#f66" }]}>Block</Text>
+            <Ionicons name="ban-outline" size={16} color={colors.danger} />
+            <Text style={[styles.profileMenuItemLabel, { color: colors.danger }]}>Block</Text>
           </TouchableOpacity>
         </View>
       </Modal>
@@ -706,7 +726,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
   edgeSwipeZone: {
     position: "absolute",
     top: 0,
@@ -729,9 +749,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 12,
-    backgroundColor: "#0d0d0d",
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: "#222",
+    borderBottomColor: colors.border,
   },
   avatarBtn: {
     width: 36,
@@ -744,12 +764,12 @@ const styles = StyleSheet.create({
     height: 32,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.border,
   },
   headerTitle: {
     flex: 1,
     textAlign: "center",
-    color: "#fff",
+    color: colors.text,
     fontSize: 15,
     fontWeight: "700",
     paddingHorizontal: 8,
@@ -762,12 +782,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   readerFanficTitle: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 15,
     fontWeight: "700",
   },
   readerChapterTitle: {
-    color: "#aaa",
+    color: colors.textMuted,
     fontSize: 12,
     marginTop: 1,
   },
@@ -795,23 +815,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: "#1c1c1c",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: colors.border,
     flexShrink: 1,
   },
   historyTabBtnActive: {
-    backgroundColor: "#7ec14b",
-    borderColor: "#7ec14b",
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
   },
   historyTabLabel: {
-    color: "#ddd",
+    color: colors.textMuted,
     fontSize: 11,
     fontWeight: "600",
     flexShrink: 1,
   },
   historyTabLabelActive: {
-    color: "#000",
+    color: colors.accentText,
   },
   searchRow: {
     flex: 1,
@@ -822,16 +842,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "#1c1c1c",
+    backgroundColor: colors.surfaceAlt,
     borderWidth: 1,
-    borderColor: "#2a2a2a",
+    borderColor: colors.border,
   },
   searchIcon: {
     flexShrink: 0,
   },
   searchInput: {
     flex: 1,
-    color: "#fff",
+    color: colors.text,
     fontSize: 14,
     paddingVertical: 0,
   },
@@ -845,9 +865,9 @@ const styles = StyleSheet.create({
   },
   panel: {
     height: "100%",
-    backgroundColor: "#111",
+    backgroundColor: colors.surface,
     borderRightWidth: 1,
-    borderRightColor: "#262626",
+    borderRightColor: colors.border,
     paddingHorizontal: 16,
     paddingBottom: Platform.OS === "ios" ? 24 : 16,
   },
@@ -860,17 +880,17 @@ const styles = StyleSheet.create({
     height: 48,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.border,
     marginBottom: 8,
   },
   panelUsername: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 16,
     fontWeight: "700",
   },
   panelDivider: {
     height: 1,
-    backgroundColor: "#262626",
+    backgroundColor: colors.border,
     marginBottom: 8,
   },
   panelItem: {
@@ -883,12 +903,12 @@ const styles = StyleSheet.create({
     opacity: 1,
   },
   panelItemLabel: {
-    color: "#ddd",
+    color: colors.textMuted,
     fontSize: 15,
     fontWeight: "600",
   },
   panelItemLabelActive: {
-    color: "#7EC14B",
+    color: colors.accent,
   },
   panelSpacer: {
     flex: 1,
@@ -897,10 +917,10 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 12,
     minWidth: 160,
-    backgroundColor: "#1c1c1c",
+    backgroundColor: colors.surfaceAlt,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#2e2e2e",
+    borderColor: colors.border,
     paddingVertical: 4,
     overflow: "hidden",
   },
@@ -912,13 +932,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   profileMenuItemLabel: {
-    color: "#ddd",
+    color: colors.textMuted,
     fontSize: 14,
     fontWeight: "600",
   },
   profileMenuDivider: {
     height: 1,
-    backgroundColor: "#2e2e2e",
+    backgroundColor: colors.border,
   },
 });
 
