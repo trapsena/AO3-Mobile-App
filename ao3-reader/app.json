@@ -10,29 +10,43 @@
       "backgroundColor": "#000000",
       "barStyle": "light-content"
     },
-
     "ios": {
       "supportsTablet": true
     },
-
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ],
+      "package": "com.trapsena.ao3reader"
     },
-
     "web": {
       "favicon": "./assets/favicon.png"
     },
-
     "plugins": [
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "enableBackgroundPlayback": true
+        }
+      ],
       "expo-font",
       "expo-status-bar",
       "expo-video",
       "expo-asset"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "91cf93db-394e-4527-adcc-4b1f09a1fe95"
+      }
+    },
+    "owner": "trapsena"
   }
 }

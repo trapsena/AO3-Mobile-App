@@ -597,7 +597,14 @@ const FanficReader: React.FC<Props> = ({
 
       {/* Controles — alterna entre leitura e navegação */}
       {ttsVisible ? (
-        <SpeechControls paragraphs={paragraphs} index={currentTtsIndex} onIndexChange={(i) => setCurrentTtsIndex(i)} onClose={() => setTtsVisible(false)} />
+        <SpeechControls
+          paragraphs={paragraphs}
+          index={currentTtsIndex}
+          onIndexChange={(i) => setCurrentTtsIndex(i)}
+          onClose={() => setTtsVisible(false)}
+          title={title}
+          subtitle={chapterTitle}
+        />
       ) : (
         <ChapterControls index={index} total={chapterLinks.length || 0} onPrev={goPrev} onNext={goNext} />
       )}

@@ -87,12 +87,18 @@ class GeminiTTSService implements TTSServiceInterface {
       // expo-audio's AudioMode is unified across platforms (no more -iOS/-Android
       // suffixed fields): playsInSilentModeIOS -> playsInSilentMode,
       // staysActiveInBackground -> shouldPlayInBackground, and
-      // shouldDuckAndroid -> interruptionMode: "duckOthers" (now applies to both
-      // platforms instead of Android only).
+      // shouldDuckAndroid -> interruptionMode (now applies to both platforms
+      // instead of Android only).
+      //
+      // "doNotMix" rather than the old "duckOthers": the notification-shade
+      // controller (backgroundSpeech.ts) uses expo-audio's lock-screen
+      // controls, which only attach under "doNotMix". This is one shared
+      // audio mode for the whole app, so whichever call ran last would win and
+      // this one would silently turn the controller off.
       await setAudioModeAsync({
         playsInSilentMode: true,
         shouldPlayInBackground: true,
-        interruptionMode: "duckOthers",
+        interruptionMode: "doNotMix",
       });
     } catch (error) {
       console.error("[GeminiTTS] Error setting audio mode:", error);
