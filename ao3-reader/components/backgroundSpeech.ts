@@ -23,6 +23,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Platform } from "react-native";
 import { isRunningInExpoGo } from "expo";
+import { Asset } from "expo-asset";
 import { createAudioPlayer, setAudioModeAsync } from "expo-audio";
 import type { AudioLockScreenOptions, AudioMetadata, AudioPlayer, AudioStatus } from "expo-audio";
 import { buildSilentWavDataUri, SeekButtonDetector } from "./backgroundSpeechCore";
@@ -34,9 +35,27 @@ const LOCK_SCREEN_OPTIONS: AudioLockScreenOptions = {
   showSeekForward: true,
   // The silent track's length and progress mean nothing to the person
   // listening, and a bar they could drag would read as a pile of button
-  // presses. Flagging it as a live stream hides the duration and the scrub
-  // bar (and disables scrubbing) while leaving the two seek buttons alone.
+  // presses. Flagging it as a live stream turns scrubbing off (and on iOS
+  // hides the duration too) while leaving the two seek buttons alone. Android's
+  // media card still draws the silent track's own bar and time — expo-audio
+  // gives no way to hide those.
   isLiveStream: true,
+};
+
+// The picture beside the title: the white play circle on near-black already in
+// the project (assets/notification-art.png), drawn to match the in-app speech
+// controls. expo-audio loads it from a URL, so the bundled file is first
+// resolved to a local one. Without it Android falls back to a black play glyph
+// that vanishes on a dark card. Any failure just means that fallback.
+const loadArtworkUrl = async (): Promise<string | undefined> => {
+  try {
+    const asset = Asset.fromModule(require("../assets/notification-art.png"));
+    await asset.downloadAsync();
+    return asset.localUri ?? undefined;
+  } catch (error) {
+    console.warn("[BackgroundSpeech] Could not load the notification artwork:", error);
+    return undefined;
+  }
 };
 
 export interface BackgroundSpeechInfo {
@@ -44,7 +63,7 @@ export interface BackgroundSpeechInfo {
   title: string;
   // Second line — the chapter.
   subtitle: string;
-  // Small text next to the app name — where in the chapter the reading is.
+  // Where in the chapter the reading is, shown after the chapter on that line.
   progress: string;
 }
 
@@ -80,6 +99,7 @@ class BackgroundSpeechSession {
   // by itself) is told apart from the echo of our own play() / pause().
   private wantPlaying = false;
   private observedPlaying = false;
+  private artworkUrl: string | undefined;
 
   // start() is async (the audio mode has to be applied first); stop() bumps
   // `generation` so a start() still in flight can tell it was cancelled.
@@ -138,7 +158,8 @@ class BackgroundSpeechSession {
         shouldPlayInBackground: true,
         interruptionMode: "doNotMix",
       });
-      if (generation !== this.generation) return; // stop() ran while the mode was being applied
+      this.artworkUrl = await loadArtworkUrl();
+      if (generation !== this.generation) return; // stop() ran while the mode / artwork were being set up
 
       const player = createAudioPlayer(
         { uri: buildSilentWavDataUri() },
@@ -190,10 +211,16 @@ class BackgroundSpeechSession {
   }
 
   private metadata(): AudioMetadata {
+    const { title, subtitle, progress } = this.info;
+    // A one-shot's "chapter" is the fic's own title, so don't print it twice.
+    const chapter = subtitle && subtitle !== title ? subtitle : "";
     return {
-      title: this.info.title || DEFAULT_TITLE,
-      artist: this.info.subtitle || undefined,
-      albumTitle: this.info.progress || undefined,
+      title: title || DEFAULT_TITLE,
+      // The second line carries the position too ("Chapter 3 · 2/110", like
+      // the counter in the in-app controls): Android's media card has no room
+      // for a third line, so a separate progress text never showed there.
+      artist: [chapter, progress].filter(Boolean).join(" · ") || undefined,
+      artworkUrl: this.artworkUrl,
     };
   }
 

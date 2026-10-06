@@ -241,7 +241,7 @@ const SpeechControls: React.FC<Props> = ({
     speaking: isSpeaking,
     title: title ?? "",
     subtitle: subtitle ?? "",
-    progress: paragraphs.length > 0 ? `${currentIndex + 1} / ${paragraphs.length}` : "",
+    progress: paragraphs.length > 0 ? `${currentIndex + 1}/${paragraphs.length}` : "",
     onPlay: resumeSpeech,
     onPause: pauseSpeech,
     onSkip: skipBy,
