@@ -3,7 +3,7 @@ import { AppState, View, TouchableOpacity, Text, StyleSheet } from "react-native
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { TTSServiceFactory, TTSSettings } from "./geminiTTS";
-import { useBackgroundSpeech } from "./backgroundSpeech";
+import { useNotificationTTS } from "./NotificationTTS";
 import { subscribeToTTSSettings, TTS_SETTINGS_KEY } from "./ttsSettings";
 import { ThemeColors, useTheme } from "../contexts/ThemeContext";
 
@@ -13,7 +13,7 @@ interface Props {
   index?: number;
   onIndexChange?: (i: number) => void;
   // What the phone's notification controller shows while reading — the fic and
-  // the chapter (see backgroundSpeech.ts).
+  // the chapter (see NotificationTTS.ts).
   title?: string;
   subtitle?: string;
 }
@@ -30,6 +30,9 @@ const SpeechControls: React.FC<Props> = ({
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [internalIndex, setInternalIndex] = useState(0);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  // Set once the saved voice settings have been read (or found missing), so
+  // reading can wait for them instead of starting in the default voice.
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [ttsSettings, setTtsSettings] = useState<TTSSettings>({
     provider: "expo",
     language: "pt-BR",
@@ -72,6 +75,19 @@ const SpeechControls: React.FC<Props> = ({
     }
   }, [ttsSettings]);
 
+  // Switching TTS on means "read to me", so reading starts by itself from the
+  // current paragraph instead of waiting for a second tap on play. It waits
+  // for the saved voice settings (declared after the effect above so the
+  // loaded engine is already in place when it fires) and for the chapter text,
+  // which may still be loading when TTS is switched on. Only once per time the
+  // controls open: pausing afterwards stays paused.
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (autoStartedRef.current || !settingsLoaded || paragraphs.length === 0) return;
+    autoStartedRef.current = true;
+    void speakContinuously(indexRef.current);
+  }, [settingsLoaded, paragraphs.length]);
+
   const loadTTSSettings = async () => {
     try {
       const saved = await AsyncStorage.getItem(TTS_SETTINGS_KEY);
@@ -89,6 +105,8 @@ const SpeechControls: React.FC<Props> = ({
       }
     } catch (err) {
       console.warn("[SpeechControls] Error loading TTS settings:", err);
+    } finally {
+      setSettingsLoaded(true);
     }
   };
 
@@ -237,7 +255,7 @@ const SpeechControls: React.FC<Props> = ({
   // The phone's notification controller: play/pause and previous/next from the
   // notification shade, and the reading keeps going with the app in the
   // background. Its buttons call the same handlers as the ones below.
-  useBackgroundSpeech({
+  useNotificationTTS({
     speaking: isSpeaking,
     title: title ?? "",
     subtitle: subtitle ?? "",

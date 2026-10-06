@@ -91,7 +91,7 @@ class GeminiTTSService implements TTSServiceInterface {
       // instead of Android only).
       //
       // "doNotMix" rather than the old "duckOthers": the notification-shade
-      // controller (backgroundSpeech.ts) uses expo-audio's lock-screen
+      // controller (NotificationTTS.ts) uses expo-audio's lock-screen
       // controls, which only attach under "doNotMix". This is one shared
       // audio mode for the whole app, so whichever call ran last would win and
       // this one would silently turn the controller off.
