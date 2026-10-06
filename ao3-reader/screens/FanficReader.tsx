@@ -15,6 +15,7 @@ import ChapterControls from "../components/ChapterControls";
 import ReaderHeader, { ReaderHeaderHandle } from "../components/ReaderHeader";
 import SpeechControls from "../components/SpeechControls";
 import { fetchWithSession, getSessionCookie } from "../api/ao3Auth";
+import { parseChapterPage } from "../api/ao3ChapterPage";
 import type { ReaderHeaderInfo } from "../components/Ao3Header";
 import type { ReaderFontKey } from "../components/readerFonts";
 import { ThemeColors, useTheme } from "../contexts/ThemeContext";
@@ -298,6 +299,16 @@ const FanficReader: React.FC<Props> = ({
   const [hydrated, setHydrated] = useState(false);
   const pendingParagraphIndexRef = useRef<number | null>(null);
 
+  // The hidden WebView is only a fallback for when the session fetch below
+  // can't produce the chapter. It isn't logged in (the fetch uses stored
+  // cookies; the WebView has its own cookie jar), so it often sees a different
+  // page — a different title, and a chapter list of one or none — and its data
+  // used to land after the fetch's and overwrite it ("Capítulo 1 / 1" on a
+  // multi-chapter fic). So it is only mounted once the fetch has failed, and
+  // anything it posts is ignored once the fetch has delivered this chapter.
+  const [webViewFallback, setWebViewFallback] = useState(false);
+  const chapterFromFetchRef = useRef(false);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -333,6 +344,7 @@ const FanficReader: React.FC<Props> = ({
     let cancelled = false;
 
     (async () => {
+      chapterFromFetchRef.current = false;
       setLoading(true);
       setContentHtml("");
       setRawContentHtml("");
@@ -345,6 +357,17 @@ const FanficReader: React.FC<Props> = ({
           if (inner) {
             console.log('[FanficReader] fetchWithSession succeeded, extracted content for', currentUrl);
             if (cancelled) return;
+
+            // The page is already in hand, so read the rest of what the reader
+            // needs — the chapter list behind the chapter controls, and the
+            // titles — straight from it, and treat it as the one source of
+            // truth for this chapter (see chapterFromFetchRef).
+            chapterFromFetchRef.current = true;
+            const page = parseChapterPage(html, extractWorkId(currentUrl));
+            if (page.title) setTitle(page.title);
+            if (page.chapterTitle) setChapterTitle(page.chapterTitle);
+            if (page.links.length > 0) setChapterLinks(page.links);
+
             setRawContentHtml(inner);
             setContentHtml(`<div style="color:#fff; line-height:1.6;">${inner}</div>`);
             setLoading(false);
@@ -356,13 +379,10 @@ const FanficReader: React.FC<Props> = ({
         console.warn("fetchWithSession failed, falling back to WebView extraction:", err);
       }
 
-      // fallback: let the hidden WebView load the page and postMessage back
-      try {
-        // trigger a reload of the hidden webview; it will post pageData via handleMessage
-        webRef.current?.reload?.();
-      } catch (e) {
-        // ignore
-      }
+      // fallback: let the hidden WebView load the page and postMessage back.
+      // Mounting it (or, if it's already mounted, pointing it at the new
+      // currentUrl) is what starts that load; it posts pageData via handleMessage.
+      if (!cancelled) setWebViewFallback(true);
 
       // keep loader until the webview posts pageData
       // setLoading will be cleared in handleMessage
@@ -508,6 +528,10 @@ const FanficReader: React.FC<Props> = ({
       const data = JSON.parse(e.nativeEvent.data);
       console.log('[FanficReader] handleMessage received:', data && data.type);
       if (data.type === "pageData") {
+        // The fetch already delivered this chapter, with a chapter list and
+        // titles read from a page we know is the right one — don't let the
+        // (logged-out, differently-rendered) WebView page overwrite them.
+        if (chapterFromFetchRef.current) return;
         if (data.title) setTitle(data.title);
         if (data.chapterTitle) setChapterTitle(data.chapterTitle);
         if (Array.isArray(data.links) && data.links.length > 0) setChapterLinks(data.links);
@@ -563,7 +587,13 @@ const FanficReader: React.FC<Props> = ({
         paragraphSpacing={paragraphSpacing}
         padding={padding}
         fontFamily={fontFamily}
-        currentUrl={currentUrl}
+        // The comments drawer asks AO3 for this page's comments. A fic opened
+        // at its bare /works/<id> URL (which is how every work card opens one)
+        // gets redirected by AO3 to /works/<id>/chapters/<first>, and the
+        // redirect drops the ?show_comments=true the drawer adds — so the
+        // first chapter showed no comments. The chapter list holds the real
+        // chapter URL; single-chapter works have no list and no redirect.
+        currentUrl={chapterLinks[index]?.href ?? currentUrl}
         onConfigChange={(cfg) => {
           if (cfg.fontSize !== undefined) setFontSize(cfg.fontSize);
           if (cfg.lineSpacing !== undefined) setLineHeight(cfg.lineSpacing);
@@ -612,17 +642,19 @@ const FanficReader: React.FC<Props> = ({
       {/* ReaderConfigModal moved into ReaderHeader; kept for backwards compatibility but hidden */}
 
 
-      {/* WebView oculta */}
-      <HiddenWebView
-        ref={webRef}
-        source={{ uri: currentUrl }}
-        injectedJavaScript={INJECTED_JS}
-        onMessage={handleMessage}
-        onLoadEnd={() => webRef.current?.injectJavaScript(INJECTED_JS)}
-        javaScriptEnabled
-        domStorageEnabled
-        mixedContentMode="always"
-      />
+      {/* WebView oculta — só montada como plano B, quando o fetch falha */}
+      {webViewFallback && (
+        <HiddenWebView
+          ref={webRef}
+          source={{ uri: currentUrl }}
+          injectedJavaScript={INJECTED_JS}
+          onMessage={handleMessage}
+          onLoadEnd={() => webRef.current?.injectJavaScript(INJECTED_JS)}
+          javaScriptEnabled
+          domStorageEnabled
+          mixedContentMode="always"
+        />
+      )}
     </View>
   );
 };
