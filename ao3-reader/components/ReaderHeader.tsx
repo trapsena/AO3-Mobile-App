@@ -16,6 +16,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { X } from "lucide-react-native";
 import CommentsDrawer from "./CommentsDrawer";
 import type { TTSProvider } from "./geminiTTS";
+import { saveTTSSettings as persistTTSSettings, TTS_SETTINGS_KEY } from "./ttsSettings";
 import { getReaderFontNativeFamilyName, READER_FONT_OPTIONS, ReaderFontKey } from "./readerFonts";
 import { ThemeColors, useTheme } from "../contexts/ThemeContext";
 
@@ -33,8 +34,6 @@ interface Voice {
   language: string;
   name: string;
 }
-
-const TTS_SETTINGS_KEY = "tts_settings";
 
 const GEMINI_VOICES = [
   "Zephyr",
@@ -152,13 +151,11 @@ const ReaderHeader = forwardRef<ReaderHeaderHandle, ReaderHeaderProps>(({
     }
   };
 
+  // Also broadcasts to the open speech controls (see ttsSettings.ts), so a
+  // change applies right away instead of after reopening them.
   const saveTTSSettings = async (settings: TTSSettings) => {
-    try {
-      await AsyncStorage.setItem(TTS_SETTINGS_KEY, JSON.stringify(settings));
-      setTtsSettings(settings);
-    } catch (err) {
-      console.warn("[ReaderHeader] Error saving TTS settings:", err);
-    }
+    setTtsSettings(settings);
+    await persistTTSSettings(settings);
   };
 
   const handleProviderChange = async (provider: TTSProvider) => {
@@ -288,7 +285,7 @@ const ReaderHeader = forwardRef<ReaderHeaderHandle, ReaderHeaderProps>(({
                   </View>
 
                   <View style={styles.setting}>
-                    <Text style={styles.label}>Espaçamento entre linhas: {lineSpacing}</Text>
+                    <Text style={styles.label}>Espaçamento entre linhas: {lineSpacing.toFixed(1)}×</Text>
                     <Slider
                       minimumValue={1.2}
                       maximumValue={2.5}
@@ -300,11 +297,11 @@ const ReaderHeader = forwardRef<ReaderHeaderHandle, ReaderHeaderProps>(({
 
                   <View style={styles.setting}>
                     <Text style={styles.label}>
-                      Espaçamento entre parágrafos: {paragraphSpacing}
+                      Espaçamento entre parágrafos: {Math.round(paragraphSpacing)}px
                     </Text>
                     <Slider
                       minimumValue={0}
-                      maximumValue={20}
+                      maximumValue={32}
                       step={1}
                       value={paragraphSpacing}
                       onValueChange={(v) => onConfigChange({ paragraphSpacing: v })}

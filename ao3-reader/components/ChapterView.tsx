@@ -9,7 +9,10 @@ interface Props {
   // raw HTML for the chapter body (innerHTML from AO3 extraction)
   htmlContent: string;
   fontSize?: number;
-  lineHeight?: number; // pixel value
+  // A multiple of the font size (1.5 = one and a half lines' worth), not
+  // pixels: the settings slider runs 1.2–2.5, and this used to be read as
+  // pixels, which turned any slider value into a 1–2px line height.
+  lineHeight?: number;
   paragraphSpacing?: number; // px
   padding?: number; // px
   // Extra top padding (on top of `padding`) reserved for the app's
@@ -45,7 +48,7 @@ interface Props {
 const ChapterView: React.FC<Props> = ({
   htmlContent,
   fontSize = 16,
-  lineHeight = 24,
+  lineHeight = 1.5,
   paragraphSpacing = 15,
   padding = 16,
   topInset = 0,
@@ -82,7 +85,7 @@ const ChapterView: React.FC<Props> = ({
       * { box-sizing: border-box; }
       html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow-x: hidden; }
       body {
-        color:${colors.text}; background:${colors.background}; font-size:${fontSize}px; line-height:${lineHeight}px;
+        color:${colors.text}; background:${colors.background}; font-size:${fontSize}px; line-height:${lineHeight};
         font-family: ${getReaderFontFamilyCss(fontFamily)};
         overflow-y: auto;
         padding-top: ${padding + topInset}px;
@@ -90,7 +93,11 @@ const ChapterView: React.FC<Props> = ({
         padding-bottom: ${padding}px;
         padding-left: ${padding}px;
       }
-      p{ margin-bottom:${paragraphSpacing}px; }
+      /* Zero the top margin too: a <p> has a default 1em (16px) one, and the
+         gap between two paragraphs is the larger of the first's bottom margin
+         and the second's top margin, so with only margin-bottom set here the
+         slider did nothing below 16px. */
+      p{ margin:0 0 ${paragraphSpacing}px 0; }
       p.current{ outline:2px solid ${hexToRgba(colors.accent, 0.25)}; padding:6px; background-color: ${hexToRgba(colors.accent, 0.04)}; }
       em,i{ font-style:italic; }
       strong,b{ font-weight:700; }

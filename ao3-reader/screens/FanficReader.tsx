@@ -282,14 +282,19 @@ const FanficReader: React.FC<Props> = ({
 
   // ⚙️ Reader settings
   const [fontSize, setFontSize] = useState(16);
-  const [lineHeight, setLineHeight] = useState(24);
+  // A multiple of the font size (see ChapterView's lineHeight), matching the
+  // settings slider's 1.2–2.5 range. 1.5 is the same look the old 24px gave
+  // at the default 16px font.
+  const [lineHeight, setLineHeight] = useState(1.5);
   const [padding, setPadding] = useState(20);
   const [fontFamily, setFontFamily] = useState<ReaderFontKey>("system");
   const [configVisible, setConfigVisible] = useState(false);
   // TTS / leitura
   const [ttsVisible, setTtsVisible] = useState(false);
   const [paragraphs, setParagraphs] = useState<string[]>([]);
-  const [paragraphSpacing, setParagraphSpacing] = useState(12);
+  // 16px is the gap paragraphs effectively had before the slider worked (the
+  // browser's default 1em top margin was setting it), so the default look holds.
+  const [paragraphSpacing, setParagraphSpacing] = useState(16);
   const [currentTtsIndex, setCurrentTtsIndex] = useState(0);
 
   // Reading-progress restore: `hydrated` gates the content-fetch effect below

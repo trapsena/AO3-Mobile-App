@@ -4,6 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { TTSServiceFactory, TTSSettings } from "./geminiTTS";
 import { useBackgroundSpeech } from "./backgroundSpeech";
+import { subscribeToTTSSettings, TTS_SETTINGS_KEY } from "./ttsSettings";
 import { ThemeColors, useTheme } from "../contexts/ThemeContext";
 
 interface Props {
@@ -16,8 +17,6 @@ interface Props {
   title?: string;
   subtitle?: string;
 }
-
-const TTS_SETTINGS_KEY = "tts_settings";
 
 const SpeechControls: React.FC<Props> = ({
   paragraphs,
@@ -55,9 +54,22 @@ const SpeechControls: React.FC<Props> = ({
     loadTTSSettings();
   }, []);
 
+  // Settings changed in the reader's settings sheet while these controls are
+  // open (engine, language, voice, rate, pitch...) used to be picked up only
+  // by closing and reopening them, since storage was read once on mount.
+  useEffect(() => subscribeToTTSSettings(setTtsSettings), []);
+
   // Update TTS service when settings change
   useEffect(() => {
-    ttsServiceRef.current = TTSServiceFactory.getService(ttsSettings);
+    const next = TTSServiceFactory.getService(ttsSettings);
+    const switchedEngine = next !== ttsServiceRef.current;
+    ttsServiceRef.current = next;
+    // Changing the engine makes the factory stop the old one. If it was
+    // reading on its own, carry on from the same paragraph with the new one.
+    // Rate/pitch/voice changes within an engine apply from the next paragraph.
+    if (switchedEngine && playingRef.current) {
+      void speakContinuously(indexRef.current);
+    }
   }, [ttsSettings]);
 
   const loadTTSSettings = async () => {
