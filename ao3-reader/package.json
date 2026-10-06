@@ -7,7 +7,8 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "postinstall": "node -e \"try{var fs=require('fs'),f='node_modules/expo-audio/android/src/main/java/expo/modules/audio/service/AudioControlsService.kt';if(fs.existsSync(f)){var o=fs.readFileSync(f,'utf8'),s=o;[['ICON_SKIP_BACK_10','ICON_REWIND'],['ICON_SKIP_FORWARD_10','ICON_FAST_FORWARD'],['media3_icon_skip_back,','media3_icon_rewind,'],['media3_icon_skip_forward,','media3_icon_fast_forward,']].forEach(function(r){s=s.split(r[0]).join(r[1])});if(s!==o)fs.writeFileSync(f,s)}}catch(e){}\""
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
