@@ -35,6 +35,8 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+.claude
+graphify-out 
 
 # generated native folders
 /ios
