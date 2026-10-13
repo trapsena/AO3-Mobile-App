@@ -3,6 +3,7 @@ import {
   View,
   ActivityIndicator,
   Alert,
+  Animated,
   StyleSheet,
   Text,
   Modal,
@@ -16,6 +17,11 @@ import ReaderHeader, { ReaderHeaderHandle } from "../components/ReaderHeader";
 import SpeechControls from "../components/SpeechControls";
 import { fetchWithSession, getSessionCookie } from "../api/ao3Auth";
 import { parseChapterPage } from "../api/ao3ChapterPage";
+import type { ChapterPageDownload } from "../api/ao3ChapterPage";
+import { downloadFanfic, formatFileSize } from "../api/ao3Download";
+import { loadDownloadedWork, syncDownloadedFanfics } from "../api/ao3DownloadedFanfics";
+import { parseLocalWorkUrl, toLocalWorkUrl } from "../api/ao3DownloadedWork";
+import type { DownloadedWork } from "../api/ao3DownloadedWork";
 import type { ReaderHeaderInfo } from "../components/Ao3Header";
 import { READER_FONT_OPTIONS } from "../components/readerFonts";
 import type { ReaderFontKey } from "../components/readerFonts";
@@ -291,6 +297,10 @@ const INJECTED_JS = `
     const links = getChapterLinks();
     const currentOption = document.querySelector('select#selected_id option:checked');
     const chapterTitle = currentOption ? currentOption.textContent.trim() : title;
+    // The page's Download menu (a.href is already absolute).
+    const downloads = Array.from(document.querySelectorAll('li.download ul a')).map(function(a) {
+      return { format: (a.textContent || '').trim(), href: a.href };
+    }).filter(function(d) { return d.format && d.href; });
 
     window.ReactNativeWebView.postMessage(JSON.stringify({
       type: 'pageData',
@@ -298,6 +308,7 @@ const INJECTED_JS = `
       chapterTitle,
       content: contentHtml,
       links,
+      downloads,
     }));
   }, 300);
 })();
@@ -349,6 +360,15 @@ const FanficReader: React.FC<Props> = ({
   // (e.g. <FanficReader key={url} initialUrl={url} .../>) so React remounts
   // a fresh reader (fresh chapter index, chapter list, etc.) per fic.
   const [currentUrl, setCurrentUrl] = useState(initialUrl || FALLBACK_WORK_URL);
+  // Set when `initialUrl` points at a downloaded file (see api/ao3DownloadedWork.ts)
+  // instead of an AO3 page: the chapters then come from that file on the phone,
+  // with no request to AO3, and the online-only extras (comments, download) are off.
+  const localFile = useMemo(() => parseLocalWorkUrl(initialUrl ?? "")?.fileName ?? null, [initialUrl]);
+  const localWorkRef = useRef<DownloadedWork | null>(null);
+  // Reading progress is kept per work: by AO3 work id online, by file name for a
+  // download (its chapters are numbered by position, not by AO3's chapter ids).
+  const progressKeyFor = (url: string) =>
+    localFile ? `local:${localFile}` : extractWorkId(url) || extractWorkId(initialUrl || FALLBACK_WORK_URL);
   const [loading, setLoading] = useState(true);
   const [contentHtml, setContentHtml] = useState("");
   const [rawContentHtml, setRawContentHtml] = useState("");
@@ -356,6 +376,34 @@ const FanficReader: React.FC<Props> = ({
   const [index, setIndex] = useState(0);
   const [title, setTitle] = useState("");
   const [chapterTitle, setChapterTitle] = useState("");
+  // The fic's Download menu from its AO3 page (EPUB, PDF, HTML...), and whether
+  // a download is running. Both feed the header's three-dot dropdown, whose
+  // Download entry saves the HTML version.
+  const [downloads, setDownloads] = useState<ChapterPageDownload[]>([]);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const htmlDownload = downloads.find((d) => d.format.toLowerCase() === "html");
+
+  // A small message that fades in near the bottom and out again by itself,
+  // for confirmations that don't need a tap to dismiss (a finished download).
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showToast = (message: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMessage(message);
+    Animated.timing(toastOpacity, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+    toastTimerRef.current = setTimeout(() => {
+      Animated.timing(toastOpacity, { toValue: 0, duration: 260, useNativeDriver: true }).start(() =>
+        setToastMessage(null),
+      );
+    }, 2800);
+  };
+  useEffect(
+    () => () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    },
+    [],
+  );
 
   // ⚙️ Reader settings
   const [fontSize, setFontSize] = useState(16);
@@ -406,7 +454,7 @@ const FanficReader: React.FC<Props> = ({
         if (savedSettings.fontFamily !== undefined) setFontFamily(savedSettings.fontFamily);
       }
 
-      const workId = extractWorkId(initialUrl || FALLBACK_WORK_URL);
+      const workId = progressKeyFor(initialUrl || FALLBACK_WORK_URL);
       if (workId) {
         const saved = await loadReadingProgress(workId);
         if (!cancelled && saved) {
@@ -462,6 +510,44 @@ const FanficReader: React.FC<Props> = ({
     if (!hydrated) return; // wait until we've checked for saved reading progress
     let cancelled = false;
 
+    if (localFile) {
+      // A downloaded work: read the file once, then show the chapter this
+      // address names (a position in the file, see toLocalWorkUrl).
+      (async () => {
+        setLoading(true);
+        setContentHtml("");
+        setRawContentHtml("");
+        try {
+          const work = localWorkRef.current ?? (await loadDownloadedWork(localFile));
+          localWorkRef.current = work;
+          if (cancelled) return;
+
+          // A shorter re-download can leave a saved chapter past the end.
+          const chapterIndex = Math.min(parseLocalWorkUrl(currentUrl)?.chapter ?? 0, work.chapters.length - 1);
+          const chapter = work.chapters[chapterIndex];
+          setTitle(work.title);
+          setChapterTitle(chapter.title);
+          // As on an AO3 page, a one-chapter work has no chapter list.
+          setChapterLinks(
+            work.chapters.length > 1
+              ? work.chapters.map((entry, i) => ({ href: toLocalWorkUrl(localFile, i), text: entry.title }))
+              : [],
+          );
+          setIndex(chapterIndex);
+          setRawContentHtml(chapter.html);
+          setContentHtml(`<div style="color:#fff; line-height:1.6;">${chapter.html}</div>`);
+        } catch (err) {
+          console.warn("[FanficReader] Could not open the downloaded work:", err);
+          Alert.alert("Couldn't open this download", err instanceof Error ? err.message : "Something went wrong.");
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }
+
     (async () => {
       chapterFromFetchRef.current = false;
       setLoading(true);
@@ -486,6 +572,7 @@ const FanficReader: React.FC<Props> = ({
             if (page.title) setTitle(page.title);
             if (page.chapterTitle) setChapterTitle(page.chapterTitle);
             if (page.links.length > 0) setChapterLinks(page.links);
+            if (page.downloads.length > 0) setDownloads(page.downloads);
 
             setRawContentHtml(inner);
             setContentHtml(`<div style="color:#fff; line-height:1.6;">${inner}</div>`);
@@ -567,7 +654,7 @@ const FanficReader: React.FC<Props> = ({
   // chapter flips don't hammer AsyncStorage with a write per change.
   useEffect(() => {
     if (!hydrated) return; // don't save until we've applied any saved progress first
-    const workId = extractWorkId(currentUrl) || extractWorkId(initialUrl || FALLBACK_WORK_URL);
+    const workId = progressKeyFor(currentUrl);
     if (!workId) return;
 
     const handle = setTimeout(() => {
@@ -595,7 +682,7 @@ const FanficReader: React.FC<Props> = ({
   // issue — `const` function expressions aren't hoisted the way function
   // declarations are.
   const saveProgressNow = () => {
-    const workId = extractWorkId(currentUrl) || extractWorkId(initialUrl || FALLBACK_WORK_URL);
+    const workId = progressKeyFor(currentUrl);
     if (workId) {
       saveReadingProgress({
         workId,
@@ -637,6 +724,29 @@ const FanficReader: React.FC<Props> = ({
     onOpenWork?.(url);
   };
 
+  // Saves the fic's HTML version into the app's "Fanfics" folder (see
+  // api/ao3Download.ts). The work-level download is the same whichever chapter
+  // is open. A finished download shows a brief toast; a failure still gets an
+  // alert, since that one needs to be noticed.
+  const handleDownload = async () => {
+    const entry = htmlDownload;
+    if (!entry || isDownloading) return;
+    setIsDownloading(true);
+    try {
+      const workId = extractWorkId(currentUrl) || extractWorkId(initialUrl || FALLBACK_WORK_URL);
+      const saved = await downloadFanfic({ href: entry.href, format: entry.format, title, workId });
+      showToast(`Download complete · ${saved.fileName} (${formatFileSize(saved.sizeBytes)})`);
+      // Read its tags/stats into the saved Downloaded Works list right away, so
+      // the card is already there the next time that screen opens.
+      syncDownloadedFanfics().catch((error) => console.warn("[FanficReader] Could not update the downloads list:", error));
+    } catch (err) {
+      console.warn("[FanficReader] Download failed:", err);
+      Alert.alert("Download failed", err instanceof Error ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   // Publish this screen's title/TTS state (and a way to reach the settings
   // modal / comments drawer this component still owns via ReaderHeader's
   // ref) so the app's global Ao3Header can render them. Cleared on unmount
@@ -649,6 +759,12 @@ const FanficReader: React.FC<Props> = ({
       onToggleTts: () => setTtsVisible((v) => !v),
       onOpenComments: () => readerHeaderRef.current?.openComments(),
       onOpenSettings: () => readerHeaderRef.current?.openSettings(),
+      // Comments live on AO3 and a download has none, so the button is hidden
+      // for one (a download also has no Download menu: `downloads` stays empty).
+      canComment: !localFile,
+      canDownload: !!htmlDownload,
+      onDownload: handleDownload,
+      isDownloading,
       onGoBack: handleClose,
     });
     // handleClose isn't memoized, so its dependencies (everything it reads —
@@ -657,7 +773,7 @@ const FanficReader: React.FC<Props> = ({
     // stale between title/chapterTitle changes (e.g. after just tapping a
     // paragraph to move currentTtsIndex, without a new chapter loading).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, chapterTitle, ttsVisible, currentUrl, index, currentTtsIndex, initialUrl, onClose, onHeaderActionsChange]);
+  }, [title, chapterTitle, ttsVisible, currentUrl, index, currentTtsIndex, initialUrl, onClose, onHeaderActionsChange, downloads, isDownloading]);
 
   // Separate from the effect above so the "clear on unmount" cleanup doesn't
   // also fire (and briefly flicker the header) on every title/TTS update —
@@ -680,6 +796,7 @@ const FanficReader: React.FC<Props> = ({
         if (data.title) setTitle(data.title);
         if (data.chapterTitle) setChapterTitle(data.chapterTitle);
         if (Array.isArray(data.links) && data.links.length > 0) setChapterLinks(data.links);
+        if (Array.isArray(data.downloads) && data.downloads.length > 0) setDownloads(data.downloads);
         if (data.content) {
           // store raw content (without wrapper) so we can rebuild highlighted variants
           console.log('[FanficReader] HiddenWebView posted chapter content (length):', data.content ? data.content.length : 0);
@@ -738,7 +855,7 @@ const FanficReader: React.FC<Props> = ({
         // redirect drops the ?show_comments=true the drawer adds — so the
         // first chapter showed no comments. The chapter list holds the real
         // chapter URL; single-chapter works have no list and no redirect.
-        currentUrl={chapterLinks[index]?.href ?? currentUrl}
+        currentUrl={localFile ? undefined : chapterLinks[index]?.href ?? currentUrl}
         onConfigChange={(cfg) => {
           if (cfg.fontSize !== undefined) setFontSize(cfg.fontSize);
           if (cfg.lineSpacing !== undefined) setLineHeight(cfg.lineSpacing);
@@ -785,6 +902,15 @@ const FanficReader: React.FC<Props> = ({
         <ChapterControls index={index} total={chapterLinks.length || 0} onPrev={goPrev} onNext={goNext} />
       )}
 
+      {/* Brief confirmation (e.g. a finished download); sits just above the bottom controls and ignores touches. */}
+      {toastMessage ? (
+        <Animated.View pointerEvents="none" style={[styles.toast, { opacity: toastOpacity }]}>
+          <Text style={styles.toastText} numberOfLines={2}>
+            {toastMessage}
+          </Text>
+        </Animated.View>
+      ) : null}
+
       {/* ReaderConfigModal moved into ReaderHeader; kept for backwards compatibility but hidden */}
 
 
@@ -812,6 +938,20 @@ const FanficReader: React.FC<Props> = ({
 // consistency since converting the whole block costs nothing.
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  toast: {
+    position: "absolute",
+    left: 24,
+    right: 24,
+    bottom: 76,
+    alignSelf: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  toastText: { color: colors.text, fontSize: 13, textAlign: "center" },
   header: {
     flexDirection: "row",
     alignItems: "center",

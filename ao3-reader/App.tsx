@@ -12,6 +12,7 @@ import AO3ListingScreen from "./screens/AO3ListingScreen";
 import AO3FandomsScreen from "./screens/AO3FandomsScreen";
 import AO3AllFandomsScreen from "./screens/AO3AllFandomsScreen";
 import AO3TagWorksScreen from "./screens/AO3TagWorksScreen";
+import AO3DownloadedWorksScreen from "./screens/AO3DownloadedWorksScreen";
 import Ao3Header, {
   Ao3Tab,
   HEADER_CONTENT_HEIGHT,
@@ -26,6 +27,7 @@ import Ao3Header, {
 } from "./components/Ao3Header";
 import { AO3Link } from "./components/AO3WorkBlurb";
 import { extractUsernameFromUsersUrl } from "./api/ao3Bookmarks";
+import { toLocalWorkUrl } from "./api/ao3DownloadedWork";
 import { useAO3Session } from "./hooks/useao3Auth";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
 
@@ -370,6 +372,15 @@ const AppContent: React.FC = () => {
           contentContainerTopPadding={headerHeight}
           onHeaderActionsChange={setTagWorksHeaderInfo}
         />
+      ) : activeTab === "downloads" ? (
+        <AO3DownloadedWorksScreen
+          // Opens the saved file itself (offline), not the work's AO3 page.
+          onWorkPress={(entry) => openReader(toLocalWorkUrl(entry.fileName))}
+          onPressAuthor={openProfile}
+          onPressTag={openTagWorks}
+          onScroll={handleScroll}
+          contentContainerTopPadding={headerHeight}
+        />
       ) : (
         <FanficReader
           // Remount per fic so the reader's internal chapter/index state
@@ -392,7 +403,7 @@ const AppContent: React.FC = () => {
       <Ao3Header
         username={username}
         activeTab={activeTab}
-        title={activeTab === "fandoms" ? "Fandoms" : undefined}
+        title={activeTab === "fandoms" ? "Fandoms" : activeTab === "downloads" ? "Downloaded Works" : undefined}
         onNavigate={navigateFromDrawer}
         onLogout={logout}
         readerHeaderInfo={readerHeaderInfo}

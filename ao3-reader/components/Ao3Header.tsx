@@ -30,7 +30,8 @@ export type Ao3Tab =
   | "works"
   | "fandoms"
   | "allFandoms"
-  | "tagWorks";
+  | "tagWorks"
+  | "downloads";
 
 // Published by FanficReader (via onHeaderActionsChange) while the Reader tab
 // is active, so Ao3Header can render the fic/chapter title and the
@@ -42,7 +43,16 @@ export interface ReaderHeaderInfo {
   isTtsActive: boolean;
   onToggleTts: () => void;
   onOpenComments: () => void;
+  // False for a downloaded work, whose comments live on AO3: the comments
+  // button is then hidden. Omitted means true.
+  canComment?: boolean;
   onOpenSettings: () => void;
+  // Whether the fic's page offered a download (the reader saves its HTML
+  // version); when false the dropdown's Download entry is hidden.
+  canDownload: boolean;
+  onDownload: () => void;
+  // True while the download is running; the Download entry is disabled meanwhile.
+  isDownloading: boolean;
   // Called instead of the generic "go back to Home" fallback, so the screen
   // can do its own cleanup first (FanficReader flushes reading progress
   // immediately before navigating away).
@@ -163,6 +173,7 @@ const NAV_ITEMS: { key: Ao3Tab; label: string; icon: keyof typeof Ionicons.glyph
   { key: "inbox", label: "Inbox", icon: "mail-outline" },
   { key: "bookmarks", label: "Bookmarks", icon: "bookmark-outline" },
   { key: "fandoms", label: "Fandoms", icon: "grid-outline" },
+  { key: "downloads", label: "Downloads", icon: "download-outline" },
 ];
 
 const Ao3Header: React.FC<Ao3HeaderProps> = ({
@@ -193,6 +204,10 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
   // separate, much simpler Modal than the drawer above (no drag/animation
   // needed, just show/hide on tap).
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  // The reader's own three-dot dropdown (Settings / Download), the same kind
+  // of simple show-on-tap Modal as the profile one above.
+  const [readerMenuOpen, setReaderMenuOpen] = useState(false);
+  const closeReaderMenu = () => setReaderMenuOpen(false);
   // The "Color Theme" drawer item's own picker — a separate Modal rendered
   // alongside the drawer's, opened without closing the drawer first (so
   // tapping its own close/Select button is what dismisses both at once).
@@ -446,11 +461,13 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
                   color={readerHeaderInfo.isTtsActive ? "#4cd137" : colors.text}
                 />
               </TouchableOpacity>
-              <TouchableOpacity onPress={readerHeaderInfo.onOpenComments} style={styles.actionBtn}>
-                <Ionicons name="chatbubble-outline" size={20} color={colors.text} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={readerHeaderInfo.onOpenSettings} style={styles.actionBtn}>
-                <Ionicons name="settings-outline" size={20} color={colors.text} />
+              {readerHeaderInfo.canComment !== false ? (
+                <TouchableOpacity onPress={readerHeaderInfo.onOpenComments} style={styles.actionBtn}>
+                  <Ionicons name="chatbubble-outline" size={20} color={colors.text} />
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity onPress={() => setReaderMenuOpen(true)} style={styles.actionBtn}>
+                <Ionicons name="ellipsis-vertical" size={20} color={colors.text} />
               </TouchableOpacity>
             </View>
           </>
@@ -672,6 +689,46 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
       </Modal>
 
       <ThemeSettingsModal visible={themeModalOpen} onClose={() => setThemeModalOpen(false)} />
+
+      <Modal
+        visible={readerMenuOpen && activeTab === "reader" && !!readerHeaderInfo}
+        transparent
+        animationType="fade"
+        onRequestClose={closeReaderMenu}
+      >
+        <Pressable style={StyleSheet.absoluteFill} onPress={closeReaderMenu} />
+        <View style={[styles.profileMenu, { top: headerHeight + 4 }]}>
+          <TouchableOpacity
+            style={styles.profileMenuItem}
+            onPress={() => {
+              closeReaderMenu();
+              readerHeaderInfo?.onOpenSettings();
+            }}
+          >
+            <Ionicons name="settings-outline" size={16} color={colors.textMuted} />
+            <Text style={styles.profileMenuItemLabel}>Settings</Text>
+          </TouchableOpacity>
+
+          {readerHeaderInfo?.canDownload ? (
+            <>
+              <View style={styles.profileMenuDivider} />
+              <TouchableOpacity
+                style={styles.profileMenuItem}
+                disabled={readerHeaderInfo.isDownloading}
+                onPress={() => {
+                  closeReaderMenu();
+                  readerHeaderInfo.onDownload();
+                }}
+              >
+                <Ionicons name="download-outline" size={16} color={colors.textMuted} />
+                <Text style={styles.profileMenuItemLabel}>
+                  {readerHeaderInfo.isDownloading ? "Downloading…" : "Download"}
+                </Text>
+              </TouchableOpacity>
+            </>
+          ) : null}
+        </View>
+      </Modal>
 
       <Modal
         visible={profileMenuOpen && activeTab === "profile" && !!profileHeaderInfo?.actions}

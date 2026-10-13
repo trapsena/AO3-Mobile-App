@@ -187,6 +187,11 @@ export async function getSessionCookie(): Promise<string | null> {
   return AsyncStorage.getItem(SESSION_KEY);
 }
 
+// The stored AO3 cookies as a ready-made Cookie header value ("" when signed
+// out), for requests that can't go through fetchWithSession — e.g. the native
+// file downloader, which streams to disk instead of through fetch.
+export const getCookieHeader = buildCookieHeader;
+
 export async function fetchWithSession(url: string, init: RequestInit = {}): Promise<Response> {
   const cookieHeader = await buildCookieHeader();
 

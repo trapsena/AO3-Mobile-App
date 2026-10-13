@@ -132,7 +132,7 @@ const ChapterView: React.FC<Props> = ({
         margin:0 0 12px; padding-left:12px; border-left:2px solid ${colors.border}; color:${colors.textMuted};
       }
       .preface.group blockquote.userstuff p, .end.notes.module blockquote.userstuff p{ margin-bottom:8px; }
-      #summary, #notes{ margin-bottom:16px; }
+      #summary, #notes, .summary.module, .notes.module{ margin-bottom:16px; }
       .end.notes.module{ margin-top:28px; padding-top:14px; border-top:1px solid ${colors.border}; }
     `;
 

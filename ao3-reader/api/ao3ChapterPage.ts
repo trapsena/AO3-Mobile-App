@@ -1,10 +1,19 @@
 // Reads the parts of an AO3 chapter page the reader needs besides the story
-// text itself — the fic's title, the chapter list, and which chapter this is.
-// Works on HTML that has already been fetched, so it needs no WebView.
+// text itself — the fic's title, the chapter list, which chapter this is, and
+// the Download menu. Works on HTML that has already been fetched, so it needs
+// no WebView.
+import { decodeEntities, toText } from "./htmlText";
 
 export interface ChapterPageLink {
   href: string;
   text: string;
+}
+
+export interface ChapterPageDownload {
+  // As AO3 labels it: "AZW3", "EPUB", "MOBI", "PDF", "HTML".
+  format: string;
+  // Absolute URL of the file (for the whole work, not just this chapter).
+  href: string;
 }
 
 export interface ChapterPageInfo {
@@ -14,18 +23,29 @@ export interface ChapterPageInfo {
   chapterTitle: string;
   // Empty for single-chapter works, which have no chapter dropdown.
   links: ChapterPageLink[];
+  // The page's Download menu; empty if it has none.
+  downloads: ChapterPageDownload[];
 }
 
-const decodeEntities = (value: string) =>
-  value
-    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, dec: string) => String.fromCodePoint(parseInt(dec, 10)))
-    .replace(/&quot;/g, "\"")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&");
 
-const toText = (html: string) => decodeEntities(html.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
+// The work navigation's Download menu:
+//   <li class="download"> ... <ul class="expandable secondary">
+//     <li><a href="/downloads/<id>/<Title>.epub?updated_at=...">EPUB</a></li> ...
+function parseDownloads(html: string): ChapterPageDownload[] {
+  const menu = html.match(/<li\b[^>]*\bclass=(["'])[^"']*\bdownload\b[^"']*\1[^>]*>([\s\S]*?)<\/ul>/i);
+  if (!menu) return [];
+  const downloads: ChapterPageDownload[] = [];
+  const anchorRegex = /<a\b[^>]*\bhref=(["'])([^"']*)\1[^>]*>([\s\S]*?)<\/a>/gi;
+  let anchor: RegExpExecArray | null;
+  while ((anchor = anchorRegex.exec(menu[2])) !== null) {
+    const raw = decodeEntities(anchor[2]).trim();
+    const format = toText(anchor[3]);
+    if (!raw || !format) continue;
+    const href = /^https?:\/\//i.test(raw) ? raw : `https://archiveofourown.org${raw.startsWith("/") ? "" : "/"}${raw}`;
+    downloads.push({ format, href });
+  }
+  return downloads;
+}
 
 export function parseChapterPage(html: string, workId: string | null): ChapterPageInfo {
   const titleMatch = html.match(/<h2\b[^>]*\bclass=(["'])[^"']*\btitle\b[^"']*\1[^>]*>([\s\S]*?)<\/h2>/i);
@@ -49,5 +69,5 @@ export function parseChapterPage(html: string, workId: string | null): ChapterPa
     }
   }
 
-  return { title, chapterTitle, links };
+  return { title, chapterTitle, links, downloads: parseDownloads(html) };
 }
