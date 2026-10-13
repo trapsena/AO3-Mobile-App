@@ -11,7 +11,7 @@
 // by a `createStyles(colors)` function instead, memoized per-component with
 // `useMemo(() => createStyles(colors), [colors])`. See AO3WorkBlurb.tsx for
 // the reference shape of that pattern.
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export type ThemeMode = "dark" | "light";
@@ -94,6 +94,20 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [mode, setModeState] = useState<ThemeMode>("dark");
   const [accentColor, setAccentColorState] = useState(DEFAULT_ACCENT_COLOR);
+  // Whether the saved theme has been read yet. Children aren't drawn before
+  // that, so a saved theme never flashes the default look first.
+  const [loaded, setLoaded] = useState(false);
+
+  // The latest chosen mode + accent, updated synchronously by the setters.
+  // Saving used to copy `mode` / `accentColor` from the render that created
+  // each setter, so changing both in a row (the Color Theme sheet's "Select"
+  // does: accent, then mode) saved the first change's value for one and the
+  // second change's value for the other — the later write silently put the
+  // old accent colour back in storage, and it came back on the next launch.
+  const latestRef = useRef<{ mode: ThemeMode; accentColor: string }>({
+    mode: "dark",
+    accentColor: DEFAULT_ACCENT_COLOR,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -102,12 +116,18 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         if (!raw || cancelled) return;
         const parsed = JSON.parse(raw);
-        if (parsed.mode === "dark" || parsed.mode === "light") setModeState(parsed.mode);
+        if (parsed.mode === "dark" || parsed.mode === "light") {
+          latestRef.current.mode = parsed.mode;
+          setModeState(parsed.mode);
+        }
         if (typeof parsed.accentColor === "string" && isValidHexColor(parsed.accentColor)) {
+          latestRef.current.accentColor = parsed.accentColor;
           setAccentColorState(parsed.accentColor);
         }
       } catch (err) {
         console.warn("[ThemeContext] Failed to load saved theme:", err);
+      } finally {
+        if (!cancelled) setLoaded(true);
       }
     })();
     return () => {
@@ -115,27 +135,29 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
   }, []);
 
-  const persist = useCallback((next: { mode: ThemeMode; accentColor: string }) => {
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch((err) =>
+  const persist = useCallback(() => {
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(latestRef.current)).catch((err) =>
       console.warn("[ThemeContext] Failed to save theme:", err),
     );
   }, []);
 
   const setMode = useCallback(
     (next: ThemeMode) => {
+      latestRef.current = { ...latestRef.current, mode: next };
       setModeState(next);
-      persist({ mode: next, accentColor });
+      persist();
     },
-    [accentColor, persist],
+    [persist],
   );
 
   const setAccentColor = useCallback(
     (hex: string) => {
       if (!isValidHexColor(hex)) return;
+      latestRef.current = { ...latestRef.current, accentColor: hex };
       setAccentColorState(hex);
-      persist({ mode, accentColor: hex });
+      persist();
     },
-    [mode, persist],
+    [persist],
   );
 
   const colors = useMemo<ThemeColors>(() => {
@@ -147,6 +169,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     () => ({ mode, accentColor, colors, setMode, setAccentColor }),
     [mode, accentColor, colors, setMode, setAccentColor],
   );
+
+  if (!loaded) return null;
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 };

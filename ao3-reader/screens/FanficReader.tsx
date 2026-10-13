@@ -17,6 +17,7 @@ import SpeechControls from "../components/SpeechControls";
 import { fetchWithSession, getSessionCookie } from "../api/ao3Auth";
 import { parseChapterPage } from "../api/ao3ChapterPage";
 import type { ReaderHeaderInfo } from "../components/Ao3Header";
+import { READER_FONT_OPTIONS } from "../components/readerFonts";
 import type { ReaderFontKey } from "../components/readerFonts";
 import { ThemeColors, useTheme } from "../contexts/ThemeContext";
 
@@ -120,7 +121,20 @@ function extractChapterContent(html: string): string | null {
   const chapterContainer =
     extractBalancedDiv(html, /<div[^>]*\bid=(?:"|')chapters(?:"|')[^>]*>/i) ||
     extractBalancedDiv(html, /<div[^>]*\bid=(?:"|')chapter-\d+(?:"|')[^>]*>/i);
-  if (chapterContainer) return stripReaderNoise(chapterContainer);
+  if (chapterContainer) {
+    // The work's own end notes aren't inside the chapter container: AO3 puts
+    // them in an "afterword" section after it (on the last chapter), so
+    // extracting only the container left them out. Re-wrapped the way AO3
+    // marks them up so ChapterView's `.end.notes.module` styling applies, same
+    // as it does to the chapter's own notes.
+    const workEndNotes = chapterContainer.includes("work_endnotes")
+      ? null
+      : extractBalancedDiv(html, /<div[^>]*\bid=(?:"|')work_endnotes(?:"|')[^>]*>/i);
+    const afterword = workEndNotes
+      ? `<div class="afterword preface group"><div id="work_endnotes" class="end notes module">${workEndNotes}</div></div>`
+      : "";
+    return stripReaderNoise(chapterContainer) + afterword;
+  }
 
   // Fallback: naive non-greedy regex, safe here only because this specific
   // element doesn't contain nested <div>s in practice.
@@ -128,6 +142,58 @@ function extractChapterContent(html: string): string | null {
     /<div[^>]*class=(?:"|')?[^"'<>]*userstuff[^"'<>]*module[^"'<>]*?(?:"|')?[^>]*>([\s\S]*?)<\/div>/i,
   );
   return match && match[1] ? match[1] : null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Reader text settings persistence                                    */
+/* ------------------------------------------------------------------ */
+
+// The settings sheet's text options (font, size, line/paragraph spacing, side
+// padding). Unlike reading progress these aren't per fic: one set, applied to
+// every fic, kept between sessions.
+const READER_SETTINGS_KEY = "ao3_reader_settings_v1";
+
+interface ReaderSettings {
+  fontSize: number;
+  lineHeight: number;
+  paragraphSpacing: number;
+  padding: number;
+  fontFamily: ReaderFontKey;
+}
+
+const clampNumber = (value: unknown, min: number, max: number): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : undefined;
+
+// Reads the saved settings back field by field, so a missing, corrupt or
+// out-of-range value (say, from an older version of the app) falls back to
+// the default for just that field instead of breaking the reader.
+async function loadReaderSettings(): Promise<Partial<ReaderSettings> | null> {
+  try {
+    const raw = await AsyncStorage.getItem(READER_SETTINGS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const fontFamily = READER_FONT_OPTIONS.some((option) => option.key === parsed.fontFamily)
+      ? (parsed.fontFamily as ReaderFontKey)
+      : undefined;
+    return {
+      fontSize: clampNumber(parsed.fontSize, 12, 28),
+      lineHeight: clampNumber(parsed.lineHeight, 1.2, 2.5),
+      paragraphSpacing: clampNumber(parsed.paragraphSpacing, 0, 32),
+      padding: clampNumber(parsed.padding, 10, 50),
+      fontFamily,
+    };
+  } catch (err) {
+    console.warn("[FanficReader] Failed to load reader settings:", err);
+    return null;
+  }
+}
+
+async function saveReaderSettings(settings: ReaderSettings): Promise<void> {
+  try {
+    await AsyncStorage.setItem(READER_SETTINGS_KEY, JSON.stringify(settings));
+  } catch (err) {
+    console.warn("[FanficReader] Failed to save reader settings:", err);
+  }
 }
 
 async function loadReadingProgress(workId: string): Promise<ReadingProgress | null> {
@@ -212,6 +278,12 @@ const INJECTED_JS = `
       // accessibility-only landmark heading.
       Array.from(clone.querySelectorAll('h3.title, h3.landmark, #work')).forEach(function(el) { el.remove(); });
       contentHtml = clone.innerHTML;
+      // The work's end notes sit outside the chapter element, in the page's
+      // "afterword" section, so they have to be added separately.
+      const endNotesEl = document.querySelector('#work_endnotes');
+      if (endNotesEl && !contentEl.contains(endNotesEl)) {
+        contentHtml += '<div class="afterword preface group">' + endNotesEl.outerHTML + '</div>';
+      }
     }
     const title = (document.querySelector('h2.title') && document.querySelector('h2.title').innerText)
       || document.title
@@ -253,6 +325,10 @@ interface Props {
   // can hide/show while reading the same way it does on the other tabs,
   // which drive it from a native ScrollView/FlatList's onScroll instead.
   onScroll?: (y: number) => void;
+  // Called with an archiveofourown.org URL when a link in the chapter text
+  // points at a different AO3 work, so the app can open that fic in this
+  // screen (as a fresh reader, with this one kept on the back stack).
+  onOpenWork?: (url: string) => void;
 }
 
 const FanficReader: React.FC<Props> = ({
@@ -261,6 +337,7 @@ const FanficReader: React.FC<Props> = ({
   topInset = 0,
   onHeaderActionsChange,
   onScroll,
+  onOpenWork,
 }) => {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -317,6 +394,18 @@ const FanficReader: React.FC<Props> = ({
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // Saved text settings load here too, before `hydrated` flips and the
+      // chapter is fetched, so the first thing drawn already uses them rather
+      // than flashing the defaults first.
+      const savedSettings = await loadReaderSettings();
+      if (!cancelled && savedSettings) {
+        if (savedSettings.fontSize !== undefined) setFontSize(savedSettings.fontSize);
+        if (savedSettings.lineHeight !== undefined) setLineHeight(savedSettings.lineHeight);
+        if (savedSettings.paragraphSpacing !== undefined) setParagraphSpacing(savedSettings.paragraphSpacing);
+        if (savedSettings.padding !== undefined) setPadding(savedSettings.padding);
+        if (savedSettings.fontFamily !== undefined) setFontFamily(savedSettings.fontFamily);
+      }
+
       const workId = extractWorkId(initialUrl || FALLBACK_WORK_URL);
       if (workId) {
         const saved = await loadReadingProgress(workId);
@@ -339,6 +428,31 @@ const FanficReader: React.FC<Props> = ({
     // Intentionally runs once per mount — pair with `key={initialUrl}` at the
     // call site so opening a different fic mounts a fresh instance.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Saves the text settings whenever one changes. Debounced because a slider
+  // reports every tick while dragged; the latest values are also flushed when
+  // the reader closes, so leaving right after a change doesn't lose it. Not
+  // before `hydrated`, or the defaults would overwrite what was just loaded.
+  const readerSettings: ReaderSettings = { fontSize, lineHeight, paragraphSpacing, padding, fontFamily };
+  const readerSettingsRef = useRef(readerSettings);
+  readerSettingsRef.current = readerSettings;
+  const settingsDirtyRef = useRef(false);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    settingsDirtyRef.current = true;
+    const handle = setTimeout(() => {
+      settingsDirtyRef.current = false;
+      saveReaderSettings(readerSettingsRef.current);
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [hydrated, fontSize, lineHeight, paragraphSpacing, padding, fontFamily]);
+
+  useEffect(() => {
+    return () => {
+      if (settingsDirtyRef.current) saveReaderSettings(readerSettingsRef.current);
+    };
   }, []);
 
   // When the chapter URL changes try to fetch it using the logged-in session.
@@ -480,7 +594,7 @@ const FanficReader: React.FC<Props> = ({
   // publish effect just below can reference it without a temporal-dead-zone
   // issue — `const` function expressions aren't hoisted the way function
   // declarations are.
-  const handleClose = () => {
+  const saveProgressNow = () => {
     const workId = extractWorkId(currentUrl) || extractWorkId(initialUrl || FALLBACK_WORK_URL);
     if (workId) {
       saveReadingProgress({
@@ -492,9 +606,35 @@ const FanficReader: React.FC<Props> = ({
         chapterTitle,
         paragraphIndex: currentTtsIndex,
         updatedAt: Date.now(),
-      }).catch((err) => console.warn("[FanficReader] Failed to save progress on close:", err));
+      }).catch((err) => console.warn("[FanficReader] Failed to save progress:", err));
     }
+  };
+
+  const handleClose = () => {
+    saveProgressNow();
     onClose?.();
+  };
+
+  // A link in the text to an AO3 work. A different work opens as its own
+  // reader (the app swaps this screen to it and keeps this fic on the back
+  // stack, so back returns here); this fic's progress is saved first so
+  // nothing since the last debounced save is lost. A link back into this same
+  // fic jumps to that chapter instead of reopening the fic over itself.
+  const handleOpenWork = (url: string) => {
+    const targetWorkId = extractWorkId(url);
+    const currentWorkId = extractWorkId(currentUrl) || extractWorkId(initialUrl || FALLBACK_WORK_URL);
+    if (targetWorkId && targetWorkId === currentWorkId) {
+      const chapterId = url.match(/chapters\/(\d+)/)?.[1];
+      const target = chapterId ? chapterLinks.findIndex((link) => link.href.includes(`/chapters/${chapterId}`)) : -1;
+      if (target >= 0 && target !== index) {
+        setIndex(target);
+        setCurrentUrl(chapterLinks[target].href);
+        setCurrentTtsIndex(0);
+      }
+      return;
+    }
+    saveProgressNow();
+    onOpenWork?.(url);
   };
 
   // Publish this screen's title/TTS state (and a way to reach the settings
@@ -622,6 +762,7 @@ const FanficReader: React.FC<Props> = ({
         onScroll={onScroll}
         currentIndex={currentTtsIndex}
         ttsActive={ttsVisible}
+        onOpenWork={handleOpenWork}
         onParagraphPress={(i) => {
           // Only jump the TTS position when its controls are already open —
           // tapping a paragraph while they're closed no longer opens them.

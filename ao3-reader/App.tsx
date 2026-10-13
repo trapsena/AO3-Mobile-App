@@ -74,10 +74,15 @@ const AppContent: React.FC = () => {
   // Shared scroll position that Ao3Header uses to hide/show itself. Reset it
   // whenever the active tab changes so switching screens always reveals the
   // header instead of leaving it wherever the previous screen's scroll left it.
+  // Also reset when the reader switches to a different fic (a link in the text
+  // to another work, or back from it): the tab stays "reader" in both cases,
+  // so without this the header stayed scrolled out of view — the link is
+  // usually tapped near the end of a chapter — and the new fic opened with no
+  // visible back button.
   const scrollY = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     scrollY.setValue(0);
-  }, [activeTab, scrollY]);
+  }, [activeTab, readerUrl, scrollY]);
 
   const handleScroll = Animated.event(
     [{ nativeEvent: { contentOffset: { y: scrollY } } }],
@@ -375,6 +380,7 @@ const AppContent: React.FC = () => {
           topInset={headerHeight}
           onHeaderActionsChange={setReaderHeaderInfo}
           onScroll={handleContentScroll}
+          onOpenWork={openReader}
         />
       )}
 

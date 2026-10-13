@@ -43,7 +43,20 @@ interface Props {
   // Which bundled font (see readerFonts.ts) to render the chapter text in —
   // "system" (the default) leaves the previous plain system-font stack.
   fontFamily?: ReaderFontKey;
+  // Called with an absolute archiveofourown.org URL when a link in the text
+  // points at an AO3 work (/works/<id>, optionally /chapters/<id>). Such taps
+  // are swallowed here instead of navigating this WebView away from the chapter.
+  onOpenWork?: (url: string) => void;
 }
+
+// Relative (/works/1), protocol-relative and AO3-mirror hrefs all become the
+// canonical https://archiveofourown.org URL, which is what the stored login
+// cookies are for and what the rest of the app expects.
+const toAo3WorkUrl = (href: string): string => {
+  const trimmed = href.trim();
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//")) return `https://archiveofourown.org${trimmed}`;
+  return trimmed.replace(/^(?:https?:)?\/\/(?:www\.)?(?:archiveofourown\.(?:org|com|net)|ao3\.org)/i, "https://archiveofourown.org");
+};
 
 const ChapterView: React.FC<Props> = ({
   htmlContent,
@@ -57,6 +70,7 @@ const ChapterView: React.FC<Props> = ({
   onScroll,
   ttsActive = false,
   fontFamily = "system",
+  onOpenWork,
 }) => {
   const { colors } = useTheme();
   const webRef = useRef<any>(null);
@@ -99,6 +113,16 @@ const ChapterView: React.FC<Props> = ({
          slider did nothing below 16px. */
       p{ margin:0 0 ${paragraphSpacing}px 0; }
       p.current{ outline:2px solid ${hexToRgba(colors.accent, 0.25)}; padding:6px; background-color: ${hexToRgba(colors.accent, 0.04)}; }
+      /* Fit pictures (and other embedded media) to the text column. Authors
+         often give images a fixed pixel width/height, which on a phone runs
+         past the right edge and gets cropped. max-width scales them down to the
+         column, and height:auto keeps the proportions whatever width/height or
+         inline style the author set (hence !important). Small inline images,
+         like emoji, are left at their own size. */
+      img, svg, video, canvas{ max-width:100% !important; height:auto !important; }
+      iframe{ max-width:100% !important; }
+      table{ max-width:100%; }
+      pre{ white-space:pre-wrap; overflow-wrap:anywhere; }
       em,i{ font-style:italic; }
       strong,b{ font-weight:700; }
       hr{ height:1px; background:${colors.border}; border:none; margin:${paragraphSpacing}px 0; }
@@ -146,6 +170,24 @@ const ChapterView: React.FC<Props> = ({
             };
           });
         }
+
+        // A link to an AO3 work (absolute, protocol-relative or /works/...) is
+        // handed to RN to open in the reader, instead of navigating this page
+        // away from the chapter. Caught in the capture phase and stopped, so
+        // the paragraph's own tap handler below doesn't also fire. Written
+        // without backslashes ([/] and [.]) since this sits in a template literal.
+        var WORK_LINK = /^(?:(?:https?:)?[/][/](?:www[.])?(?:archiveofourown[.](?:org|com|net)|ao3[.]org))?[/]works[/][0-9]+(?:[/]chapters[/][0-9]+)?[/]?(?:[?#].*)?$/i;
+        document.addEventListener('click', function(ev){
+          try{
+            var a = ev.target && ev.target.closest ? ev.target.closest('a') : null;
+            var href = a ? (a.getAttribute('href') || '').trim() : '';
+            if(href && WORK_LINK.test(href)){
+              ev.preventDefault();
+              ev.stopPropagation();
+              window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'openWork', href: href }));
+            }
+          }catch(e){}
+        }, true);
 
         bindClicks();
         // rebind after dynamic changes
@@ -217,6 +259,8 @@ const ChapterView: React.FC<Props> = ({
               onParagraphPress(data.index);
             } else if (data.type === 'scroll' && typeof onScroll === 'function') {
               onScroll(data.y);
+            } else if (data.type === 'openWork' && typeof data.href === 'string' && typeof onOpenWork === 'function') {
+              onOpenWork(toAo3WorkUrl(data.href));
             }
           } catch (err) { /* ignore */ }
         }}
