@@ -15,7 +15,19 @@ import {
 import { X, MessageCircle } from "lucide-react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { fetchWithSession } from "../api/ao3Auth";
-import { fetchReplyForm, postReplyComment, toAbsoluteAO3Url, AO3ReplyForm } from "../api/ao3Comments";
+import {
+  fetchCommentsFragment,
+  fetchReplyForm,
+  parseChapterCommentForm,
+  postChapterComment,
+  postReplyComment,
+  toAbsoluteAO3Url,
+  AO3ChapterCommentForm,
+  AO3ReplyForm,
+} from "../api/ao3Comments";
+import { AO3Pagination, parsePagination } from "../api/ao3Pagination";
+import AO3PagingBar from "./AO3PagingBar";
+import ChapterComment from "./ChapterComment";
 import InlineReplyForm from "./InlineReplyForm";
 import { ThemeColors, useTheme } from "../contexts/ThemeContext";
 
@@ -58,9 +70,11 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
   const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(false);
-  const [currentPage, setCurrentPage] = useState(0);
   const [totalComments, setTotalComments] = useState(0);
-  const commentsPerPage = 30;
+  // AO3 splits a chapter with many comments into pages (the "1 2 3 ... Next"
+  // bar above and below its comments); this is that bar for the page shown.
+  const [pagination, setPagination] = useState<AO3Pagination | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
 
   // Which comment/reply's inline reply form is open, if any — AO3's own
   // comment threads (and its Inbox) open this in place rather than sending
@@ -70,6 +84,15 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
   const [replyLoading, setReplyLoading] = useState(false);
   const [replyError, setReplyError] = useState<string | null>(null);
   const [replySubmitting, setReplySubmitting] = useState(false);
+
+  // AO3's "Comment as ..." form for the chapter on screen, read from the same
+  // page the comments come from. Cleared when the chapter changes, since the
+  // form belongs to one chapter.
+  const [commentForm, setCommentForm] = useState<AO3ChapterCommentForm | null>(null);
+  const [commentSubmitting, setCommentSubmitting] = useState(false);
+  useEffect(() => {
+    setCommentForm(null);
+  }, [currentUrl]);
 
   // Load comments when drawer opens
   useEffect(() => {
@@ -357,33 +380,70 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
     return comments;
   };
 
-  const loadComments = async () => {
+  // Loads a page of this chapter's comments: the chapter's own page for the
+  // first one, or — given the address from AO3's page bar — a later one.
+  // `goToLast` then moves on to the last page, where a comment just posted ends up.
+  const loadComments = async (opts: { pageHref?: string; goToLast?: boolean } = {}) => {
     setLoading(true);
     setComments([]);
-    setCurrentPage(0);
 
     try {
-      // Add query params to show comments
-      const commentsUrl = currentUrl.includes("?")
-        ? `${currentUrl}&show_comments=true#comments`
-        : `${currentUrl}?show_comments=true#comments`;
+      const sep = currentUrl.includes("?") ? "&" : "?";
+      const firstPageUrl = `${currentUrl}${sep}show_comments=true#comments`;
 
-      console.log("[CommentsDrawer] Fetching comments from:", commentsUrl);
+      let html: string | null = null;
+      let parsedComments: Comment[] = [];
 
-      const res = await fetchWithSession(commentsUrl);
-      if (!res.ok) {
-        console.warn("[CommentsDrawer] Failed to fetch comments:", res.status);
+      if (opts.pageHref) {
+        // AO3's own call for a later page; if its answer has no comments in it,
+        // the chapter page itself can be asked for that page number instead.
+        html = await fetchCommentsFragment(opts.pageHref);
+        parsedComments = html ? parseComments(html) : [];
+        if (parsedComments.length === 0) {
+          const page = opts.pageHref.match(/[?&]page=(d+)/)?.[1];
+          if (page) {
+            html = null;
+            const res = await fetchWithSession(`${currentUrl}${sep}show_comments=true&page=${page}#comments`);
+            if (res.ok) {
+              html = await res.text();
+              parsedComments = parseComments(html);
+            }
+          }
+        }
+      } else {
+        console.log("[CommentsDrawer] Fetching comments from:", firstPageUrl);
+        const res = await fetchWithSession(firstPageUrl);
+        if (!res.ok) {
+          console.warn("[CommentsDrawer] Failed to fetch comments:", res.status);
+          setLoading(false);
+          return;
+        }
+        html = await res.text();
+        // The comment form is only on the chapter's own page.
+        setCommentForm(parseChapterCommentForm(html));
+        parsedComments = parseComments(html);
+      }
+
+      if (html === null) {
         setLoading(false);
         return;
       }
 
-      const html = await res.text();
-      const parsedComments = parseComments(html);
-
       console.log("[CommentsDrawer] Parsed comments:", parsedComments.length);
 
+      const bar = parsePagination(html);
+      setPagination(bar);
       setComments(parsedComments);
       setTotalComments(parsedComments.length);
+      if (opts.pageHref) scrollRef.current?.scrollTo({ y: 0, animated: false });
+
+      if (opts.goToLast && !opts.pageHref) {
+        const last = [...bar.pages].reverse().find((page) => !page.isGap && page.href && !page.isCurrent);
+        if (last?.href && !bar.pages[bar.pages.length - 1]?.isCurrent) {
+          await loadComments({ pageHref: last.href });
+          return;
+        }
+      }
     } catch (err) {
       console.warn("[CommentsDrawer] Error fetching comments:", err);
     } finally {
@@ -391,10 +451,10 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
     }
   };
 
-  const startIndex = currentPage * commentsPerPage;
-  const endIndex = startIndex + commentsPerPage;
-  const paginatedComments = comments.slice(startIndex, endIndex);
-  const totalPages = Math.ceil(comments.length / commentsPerPage);
+  // Shown above and below the comments, as on AO3's page.
+  const pagingBar = pagination ? (
+    <AO3PagingBar pagination={pagination} onGo={(href) => loadComments({ pageHref: href })} />
+  ) : null;
 
   /* ------------------------------ reply ------------------------------- */
 
@@ -470,6 +530,44 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
         .finally(() => setReplySubmitting(false));
     },
     [replyForm, currentUrl],
+  );
+
+  // Posts the chapter comment typed in the box at the top. Resolves true once
+  // AO3 accepted it (the box then empties and the list reloads to show it);
+  // otherwise the person is told why and the text stays for another try.
+  const handlePostComment = useCallback(
+    async (text: string): Promise<boolean> => {
+      if (!commentForm) return false;
+      setCommentSubmitting(true);
+      try {
+        const result = await postChapterComment(commentForm, text, currentUrl);
+        if (result.ok) {
+          Alert.alert("Comment posted", "Your comment was posted to AO3.");
+          loadComments({ goToLast: true });
+          return true;
+        }
+        if (result.reason === "auth") {
+          Alert.alert("Couldn't post comment", "AO3 may have signed you out. Try reloading and signing in again.");
+        } else if (result.reason === "token") {
+          Alert.alert("Couldn't post comment", "AO3 rejected the request (expired token). Reopen the comments and try again.");
+        } else if (result.reason === "rejected") {
+          Alert.alert("AO3 didn't accept the comment", result.message ?? "It was refused.");
+        } else {
+          Alert.alert(
+            "Couldn't post comment",
+            result.status
+              ? `AO3 didn't confirm the comment (status ${result.status}).`
+              : "Something went wrong posting your comment.",
+          );
+        }
+        return false;
+      } finally {
+        setCommentSubmitting(false);
+      }
+    },
+    // loadComments is re-created every render but only reads currentUrl.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [commentForm, currentUrl],
   );
 
   // Recursive render function for nested replies
@@ -559,106 +657,96 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
           </TouchableOpacity>
         </View>
 
-        {/* Content */}
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.accent} />
-            <Text style={styles.loadingText}>Carregando comentários...</Text>
-          </View>
-        ) : comments.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>Nenhum comentário encontrado</Text>
-          </View>
-        ) : (
-          <>
-            <ScrollView style={styles.commentsList} showsVerticalScrollIndicator={false}>
-              {paginatedComments.map((comment) => (
-                <View key={comment.id} style={styles.commentContainer}>
-                  {/* Main Comment */}
-                  <View style={styles.card}>
-                    <View style={styles.topRow}>
-                      {comment.avatarUrl ? (
-                        <Image source={{ uri: comment.avatarUrl }} style={styles.avatar} />
-                      ) : (
-                        <View style={[styles.avatar, styles.avatarPlaceholder]} />
-                      )}
-                      <View style={styles.main}>
-                        <Text style={styles.byline}>
-                          <Text style={styles.username}>{comment.username}</Text>
-                          {comment.chapterTitle ? (
-                            <>
-                              <Text style={styles.on}> on </Text>
-                              <Text style={styles.target}>{comment.chapterTitle}</Text>
-                            </>
-                          ) : null}
-                        </Text>
-                        {comment.date ? <Text style={styles.date}>{comment.date}</Text> : null}
+        {/* Content: the box for commenting on this chapter, then its comments */}
+        <ScrollView ref={scrollRef} style={styles.commentsList} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <ChapterComment
+            // A fresh box per chapter, so a half-written comment isn't carried over.
+            key={currentUrl}
+            available={!!commentForm}
+            loading={loading}
+            postingAs={commentForm?.postingAs}
+            submitting={commentSubmitting}
+            onSubmit={handlePostComment}
+          />
+
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={colors.accent} />
+              <Text style={styles.loadingText}>Carregando comentários...</Text>
+            </View>
+          ) : comments.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>Nenhum comentário encontrado</Text>
+            </View>
+          ) : (
+            <>
+              {pagingBar}
+                {comments.map((comment) => (
+                  <View key={comment.id} style={styles.commentContainer}>
+                    {/* Main Comment */}
+                    <View style={styles.card}>
+                      <View style={styles.topRow}>
+                        {comment.avatarUrl ? (
+                          <Image source={{ uri: comment.avatarUrl }} style={styles.avatar} />
+                        ) : (
+                          <View style={[styles.avatar, styles.avatarPlaceholder]} />
+                        )}
+                        <View style={styles.main}>
+                          <Text style={styles.byline}>
+                            <Text style={styles.username}>{comment.username}</Text>
+                            {comment.chapterTitle ? (
+                              <>
+                                <Text style={styles.on}> on </Text>
+                                <Text style={styles.target}>{comment.chapterTitle}</Text>
+                              </>
+                            ) : null}
+                          </Text>
+                          {comment.date ? <Text style={styles.date}>{comment.date}</Text> : null}
+                        </View>
                       </View>
+
+                      {comment.text ? <Text style={styles.commentText}>{comment.text}</Text> : null}
+
+                      <View style={styles.actionsRow}>
+                        <View style={styles.badges} />
+                        <TouchableOpacity
+                          style={[styles.actionBtn, replyingId === comment.id && styles.actionBtnActive]}
+                          onPress={() => handleToggleReply(comment.id, comment.replyHref)}
+                        >
+                          <Ionicons name="arrow-undo-outline" size={14} color={colors.textMuted} />
+                          <Text style={styles.actionText}>
+                            {replyingId === comment.id ? "Fechar" : "Responder"}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {replyingId === comment.id ? (
+                        <InlineReplyForm
+                          loading={replyLoading}
+                          error={replyError}
+                          submitting={replySubmitting}
+                          onSubmit={handleSubmitReply}
+                          onCancel={() => handleToggleReply(comment.id, comment.replyHref)}
+                          accentColor={colors.accent}
+                        />
+                      ) : null}
                     </View>
 
-                    {comment.text ? <Text style={styles.commentText}>{comment.text}</Text> : null}
-
-                    <View style={styles.actionsRow}>
-                      <View style={styles.badges} />
-                      <TouchableOpacity
-                        style={[styles.actionBtn, replyingId === comment.id && styles.actionBtnActive]}
-                        onPress={() => handleToggleReply(comment.id, comment.replyHref)}
-                      >
-                        <Ionicons name="arrow-undo-outline" size={14} color={colors.textMuted} />
-                        <Text style={styles.actionText}>
-                          {replyingId === comment.id ? "Fechar" : "Responder"}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    {replyingId === comment.id ? (
-                      <InlineReplyForm
-                        loading={replyLoading}
-                        error={replyError}
-                        submitting={replySubmitting}
-                        onSubmit={handleSubmitReply}
-                        onCancel={() => handleToggleReply(comment.id, comment.replyHref)}
-                        accentColor={colors.accent}
-                      />
-                    ) : null}
+                    {/* Replies */}
+                    {comment.replies.length > 0 && (
+                      <View style={styles.repliesContainer}>
+                        {comment.replies.map((reply) =>
+                          renderReply(reply, 0)
+                        )}
+                      </View>
+                    )}
                   </View>
+                ))}
+              {pagingBar}
+            </>
+          )}
+        </ScrollView>
 
-                  {/* Replies */}
-                  {comment.replies.length > 0 && (
-                    <View style={styles.repliesContainer}>
-                      {comment.replies.map((reply) =>
-                        renderReply(reply, 0)
-                      )}
-                    </View>
-                  )}
-                </View>
-              ))}
-            </ScrollView>
-
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <View style={styles.pagination}>
-                <TouchableOpacity
-                  style={[styles.pageButton, currentPage === 0 && styles.pageButtonDisabled]}
-                  onPress={() => setCurrentPage(Math.max(0, currentPage - 1))}
-                  disabled={currentPage === 0}
-                >
-                  <Text style={styles.pageButtonText}>← Anterior</Text>
-                </TouchableOpacity>
-                <Text style={styles.pageIndicator}>
-                  {currentPage + 1} / {totalPages}
-                </Text>
-                <TouchableOpacity
-                  style={[styles.pageButton, currentPage === totalPages - 1 && styles.pageButtonDisabled]}
-                  onPress={() => setCurrentPage(Math.min(totalPages - 1, currentPage + 1))}
-                  disabled={currentPage === totalPages - 1}
-                >
-                  <Text style={styles.pageButtonText}>Próxima →</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </>
-        )}
       </Animated.View>
     </>
   );
@@ -666,7 +754,7 @@ const CommentsDrawer: React.FC<CommentsDrawerProps> = ({ visible, currentUrl, on
 
 const createStyles = (colors: ThemeColors) => StyleSheet.create({
   overlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: "rgba(0,0,0,0.5)",
     zIndex: 1,
   },

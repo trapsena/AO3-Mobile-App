@@ -77,6 +77,55 @@ function extractHtmlFromResponse(body: string): string {
   });
 }
 
+// Reads the fields a comment form must send back: where it posts to, its
+// authenticity token, and the hidden fields (who is commenting, which
+// controller) it carries. Shared by the reply form and a chapter's own form.
+function readCommentForm(formHtml: string): AO3ReplyForm | null {
+  const actionUrl = toAbsoluteAO3Url(getAttr(formHtml, "action"));
+  const authenticityToken = getInputValue(formHtml, "authenticity_token");
+  if (!actionUrl || !authenticityToken) {
+    console.warn("[ao3Comments] Comment form missing action or token", { actionUrl, hasToken: !!authenticityToken });
+    return null;
+  }
+
+  const fields: Record<string, string> = {};
+  let pseudId = getInputValue(formHtml, "comment[pseud_id]");
+  if (!pseudId) {
+    // An account with several pseuds gets a menu instead of a hidden field.
+    const select = formHtml.match(/<select\b(?=[^>]*\bname=["']comment\[pseud_id\]["'])[^>]*>([\s\S]*?)<\/select>/i);
+    const options = select ? select[1].match(/<option\b[^>]*>/gi) ?? [] : [];
+    const chosen = options.find((option) => /\bselected\b/i.test(option)) ?? options[0];
+    pseudId = chosen ? getAttr(chosen, "value") : undefined;
+  }
+  if (pseudId) fields["comment[pseud_id]"] = pseudId;
+  const controllerName = getInputValue(formHtml, "controller_name");
+  if (controllerName) fields.controller_name = controllerName;
+
+  const submitMatch = formHtml.match(/<input\b(?=[^>]*\btype=["']submit["'])[^>]*>/i);
+  const commitLabel = (submitMatch ? getAttr(submitMatch[0], "value") : undefined) || "Comment";
+
+  return { actionUrl, authenticityToken, fields, commitLabel };
+}
+
+export interface AO3ChapterCommentForm extends AO3ReplyForm {
+  // The name the comment will be posted under ("Comment as trapsena").
+  postingAs?: string;
+}
+
+// The "Comment as ..." form at the foot of a chapter page (loaded with
+// ?show_comments=true, which is what the comments drawer already fetches), or
+// null when the page has none — comments closed, or not signed in.
+export function parseChapterCommentForm(html: string): AO3ChapterCommentForm | null {
+  const forms = html.match(/<form\b[\s\S]*?<\/form>/gi) ?? [];
+  const formHtml = forms.find((form) => /\baction=["'][^"']*\/(?:chapters|works)\/\d+\/comments\/?["']/i.test(form));
+  if (!formHtml) return null;
+  const form = readCommentForm(formHtml);
+  if (!form) return null;
+  const byline = formHtml.match(/<span\b[^>]*\bclass=["']byline["'][^>]*>([\s\S]*?)<\/span>/i)?.[1];
+  const postingAs = byline ? decodeHtmlAttribute(byline.replace(/<[^>]+>/g, "")).trim() : "";
+  return { ...form, postingAs: postingAs || undefined };
+}
+
 export async function fetchReplyForm(replyHref: string): Promise<AO3ReplyForm | null> {
   try {
     const res = await fetchWithSession(replyHref, {
@@ -96,25 +145,7 @@ export async function fetchReplyForm(replyHref: string): Promise<AO3ReplyForm | 
       console.warn("[ao3Comments] No <form> found in reply response");
       return null;
     }
-    const formHtml = formMatch[0];
-
-    const actionUrl = toAbsoluteAO3Url(getAttr(formHtml, "action"));
-    const authenticityToken = getInputValue(formHtml, "authenticity_token");
-    if (!actionUrl || !authenticityToken) {
-      console.warn("[ao3Comments] Reply form missing action or token", { actionUrl, hasToken: !!authenticityToken });
-      return null;
-    }
-
-    const fields: Record<string, string> = {};
-    const pseudId = getInputValue(formHtml, "comment[pseud_id]");
-    if (pseudId) fields["comment[pseud_id]"] = pseudId;
-    const controllerName = getInputValue(formHtml, "controller_name");
-    if (controllerName) fields.controller_name = controllerName;
-
-    const submitMatch = formHtml.match(/<input\b(?=[^>]*\btype=["']submit["'])[^>]*>/i);
-    const commitLabel = (submitMatch ? getAttr(submitMatch[0], "value") : undefined) || "Comment";
-
-    return { actionUrl, authenticityToken, fields, commitLabel };
+    return readCommentForm(formMatch[0]);
   } catch (err) {
     console.warn("[ao3Comments] Could not fetch reply form:", err);
     return null;
@@ -155,5 +186,79 @@ export async function postReplyComment(
   } catch (err) {
     console.warn("[ao3Comments] Reply post failed:", err);
     return { ok: false, reason: "unknown" };
+  }
+}
+
+export type AO3PostCommentResult =
+  | { ok: true }
+  | { ok: false; reason: "auth" | "token" | "rejected" | "unknown"; message?: string; status?: number };
+
+// AO3's red "flash" message on a page, e.g. <div class="flash error">...</div>.
+const flashErrorText = (html: string): string | undefined => {
+  const match = html.match(/<div\b[^>]*\bclass=["']flash[^"']*\berror\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i);
+  const text = match ? decodeHtmlAttribute(match[1].replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim() : "";
+  return text || undefined;
+};
+
+// Posts a comment on a chapter the way the page's own form does: a plain form
+// post that AO3 answers with a redirect to the new comment, not the AJAX call a
+// reply uses. AO3 reports a refusal (a duplicate comment, comments turned off)
+// as a message on the page it lands on, so that page is read for one.
+export async function postChapterComment(
+  form: AO3ReplyForm,
+  commentText: string,
+  referer: string,
+): Promise<AO3PostCommentResult> {
+  const body = new URLSearchParams();
+  body.append("authenticity_token", form.authenticityToken);
+  Object.entries(form.fields).forEach(([key, value]) => body.append(key, value));
+  body.append("comment[comment_content]", commentText);
+  body.append("commit", form.commitLabel);
+
+  try {
+    const res = await fetchWithSession(form.actionUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        Referer: referer,
+      },
+      body: body.toString(),
+    });
+
+    if (res.status === 401 || res.status === 403) return { ok: false, reason: "auth", status: res.status };
+    if (res.status === 422) return { ok: false, reason: "token", status: res.status };
+    if (!res.ok) return { ok: false, reason: "unknown", status: res.status };
+    if (/\/users\/login\b/.test(res.url || "")) return { ok: false, reason: "auth", status: res.status };
+
+    const error = flashErrorText(await res.text());
+    if (error) return { ok: false, reason: "rejected", message: error };
+    return { ok: true };
+  } catch (err) {
+    console.warn("[ao3Comments] Chapter comment post failed:", err);
+    return { ok: false, reason: "unknown" };
+  }
+}
+
+// A later page of a chapter's comments. AO3's own page loads these with an AJAX
+// call whose answer is a script that swaps the new comments into the page (the
+// same kind of answer as the reply form's), so the comments' HTML is picked out
+// of it. Null when the request fails.
+export async function fetchCommentsFragment(href: string): Promise<string | null> {
+  try {
+    const res = await fetchWithSession(href, {
+      headers: {
+        "X-Requested-With": "XMLHttpRequest",
+        Accept: "text/javascript, text/html, application/xhtml+xml, application/xml;q=0.9, */*;q=0.8",
+      },
+    });
+    if (!res.ok) {
+      console.warn("[ao3Comments] Comments page fetch was not ok:", res.status);
+      return null;
+    }
+    return extractHtmlFromResponse(await res.text());
+  } catch (err) {
+    console.warn("[ao3Comments] Could not fetch a comments page:", err);
+    return null;
   }
 }

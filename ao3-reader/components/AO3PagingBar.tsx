@@ -72,7 +72,8 @@ const createStyles = (colors: ThemeColors) =>
       borderColor: colors.border,
     },
     arrowDisabled: { opacity: 0.4 },
-    numbers: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 6 },
+    // flexGrow + justifyContent keep the page numbers centred between the arrows when they fit.
+    numbers: { flexGrow: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 6 },
     number: {
       minWidth: 32,
       height: 32,
