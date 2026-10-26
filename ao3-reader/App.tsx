@@ -13,6 +13,9 @@ import AO3FandomsScreen from "./screens/AO3FandomsScreen";
 import AO3AllFandomsScreen from "./screens/AO3AllFandomsScreen";
 import AO3TagWorksScreen from "./screens/AO3TagWorksScreen";
 import AO3DownloadedWorksScreen from "./screens/AO3DownloadedWorksScreen";
+import AO3SearchScreen from "./screens/AO3SearchScreen";
+import AO3PeopleResultsScreen from "./screens/AO3PeopleResultsScreen";
+import AO3TagResultsScreen from "./screens/AO3TagResultsScreen";
 import Ao3Header, {
   Ao3Tab,
   HEADER_CONTENT_HEIGHT,
@@ -24,6 +27,9 @@ import Ao3Header, {
   WorksHeaderInfo,
   AllFandomsHeaderInfo,
   TagWorksHeaderInfo,
+  SearchHeaderInfo,
+  PeopleResultsHeaderInfo,
+  TagResultsHeaderInfo,
 } from "./components/Ao3Header";
 import { AO3Link } from "./components/AO3WorkBlurb";
 import { extractUsernameFromUsersUrl } from "./api/ao3Bookmarks";
@@ -43,6 +49,8 @@ interface NavEntry {
   worksUsername: string | null;
   allFandomsCategory: { title: string; allHref: string } | null;
   tagWorksTag: AO3Link | null;
+  peopleResultsUrl: string | null;
+  tagResultsUrl: string | null;
 }
 
 const AppContent: React.FC = () => {
@@ -56,6 +64,8 @@ const AppContent: React.FC = () => {
   const [worksUsername, setWorksUsername] = useState<string | null>(null);
   const [allFandomsCategory, setAllFandomsCategory] = useState<{ title: string; allHref: string } | null>(null);
   const [tagWorksTag, setTagWorksTag] = useState<AO3Link | null>(null);
+  const [peopleResultsUrl, setPeopleResultsUrl] = useState<string | null>(null);
+  const [tagResultsUrl, setTagResultsUrl] = useState<string | null>(null);
   // Mutated directly (not state) — popping/pushing it should never itself
   // trigger a re-render; the setActiveTab/setReaderUrl/etc. calls around it
   // already do that. Kept in a ref (rather than plain state) specifically so
@@ -70,6 +80,9 @@ const AppContent: React.FC = () => {
   const [worksHeaderInfo, setWorksHeaderInfo] = useState<WorksHeaderInfo | null>(null);
   const [allFandomsHeaderInfo, setAllFandomsHeaderInfo] = useState<AllFandomsHeaderInfo | null>(null);
   const [tagWorksHeaderInfo, setTagWorksHeaderInfo] = useState<TagWorksHeaderInfo | null>(null);
+  const [searchHeaderInfo, setSearchHeaderInfo] = useState<SearchHeaderInfo | null>(null);
+  const [peopleResultsHeaderInfo, setPeopleResultsHeaderInfo] = useState<PeopleResultsHeaderInfo | null>(null);
+  const [tagResultsHeaderInfo, setTagResultsHeaderInfo] = useState<TagResultsHeaderInfo | null>(null);
   const insets = useSafeAreaInsets();
   const headerHeight = HEADER_CONTENT_HEIGHT + insets.top;
 
@@ -111,6 +124,8 @@ const AppContent: React.FC = () => {
       worksUsername,
       allFandomsCategory,
       tagWorksTag,
+      peopleResultsUrl,
+      tagResultsUrl,
     });
   };
 
@@ -188,6 +203,22 @@ const AppContent: React.FC = () => {
     setActiveTab("tagWorks");
   };
 
+  // Called when a People Search is submitted — shows its results in-app, with
+  // the form kept behind them on the back stack.
+  const openPeopleResults = (url: string) => {
+    pushNavHistory();
+    setPeopleResultsUrl(url);
+    setActiveTab("peopleResults");
+  };
+
+  // Called when a Tag Search is submitted — shows its results in-app, with the
+  // form kept behind them on the back stack.
+  const openTagResults = (url: string) => {
+    pushNavHistory();
+    setTagResultsUrl(url);
+    setActiveTab("tagResults");
+  };
+
   // Drawer nav items (Home/Reader/History/Inbox/Bookmarks) are top-level
   // destinations reached via the menu rather than by drilling into content —
   // treated as a fresh start, so they reset the back stack instead of adding
@@ -228,6 +259,8 @@ const AppContent: React.FC = () => {
     else if (entry.tab === "works") setWorksUsername(entry.worksUsername);
     else if (entry.tab === "allFandoms") setAllFandomsCategory(entry.allFandomsCategory);
     else if (entry.tab === "tagWorks") setTagWorksTag(entry.tagWorksTag);
+    else if (entry.tab === "peopleResults") setPeopleResultsUrl(entry.peopleResultsUrl);
+    else if (entry.tab === "tagResults") setTagResultsUrl(entry.tagResultsUrl);
   }, []);
 
   if (loading) {
@@ -372,6 +405,42 @@ const AppContent: React.FC = () => {
           contentContainerTopPadding={headerHeight}
           onHeaderActionsChange={setTagWorksHeaderInfo}
         />
+      ) : activeTab === "search" ? (
+        <AO3SearchScreen
+          // A search's results are the works listing the tag screen already
+          // draws (it recognises a /works/search address), so submitting just
+          // opens that, with this form kept behind it on the back stack.
+          onSearch={openTagWorks}
+          onSearchPeople={openPeopleResults}
+          onSearchTags={openTagResults}
+          onScroll={handleScroll}
+          contentContainerTopPadding={headerHeight}
+          onHeaderActionsChange={setSearchHeaderInfo}
+        />
+      ) : activeTab === "peopleResults" ? (
+        <AO3PeopleResultsScreen
+          // Remount per search so a new one starts at page 1, scrolled to the top.
+          key={peopleResultsUrl ?? "no-people-search"}
+          url={peopleResultsUrl ?? ""}
+          onClose={goBack}
+          onPressAuthor={openProfile}
+          onPressWorks={openWorks}
+          onPressBookmarks={openBookmarks}
+          onScroll={handleScroll}
+          contentContainerTopPadding={headerHeight}
+          onHeaderActionsChange={setPeopleResultsHeaderInfo}
+        />
+      ) : activeTab === "tagResults" ? (
+        <AO3TagResultsScreen
+          // Remount per search so a new one starts at page 1, scrolled to the top.
+          key={tagResultsUrl ?? "no-tag-search"}
+          url={tagResultsUrl ?? ""}
+          onClose={goBack}
+          onPressTag={openTagWorks}
+          onScroll={handleScroll}
+          contentContainerTopPadding={headerHeight}
+          onHeaderActionsChange={setTagResultsHeaderInfo}
+        />
       ) : activeTab === "downloads" ? (
         <AO3DownloadedWorksScreen
           // Opens the saved file itself (offline), not the work's AO3 page.
@@ -414,6 +483,9 @@ const AppContent: React.FC = () => {
         worksHeaderInfo={worksHeaderInfo}
         allFandomsHeaderInfo={allFandomsHeaderInfo}
         tagWorksHeaderInfo={tagWorksHeaderInfo}
+        searchHeaderInfo={searchHeaderInfo}
+        peopleResultsHeaderInfo={peopleResultsHeaderInfo}
+        tagResultsHeaderInfo={tagResultsHeaderInfo}
         scrollY={scrollY}
       />
     </View>

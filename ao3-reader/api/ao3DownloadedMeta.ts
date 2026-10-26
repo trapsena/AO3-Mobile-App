@@ -35,7 +35,7 @@ function toAbsoluteHref(raw: string): string {
 
 function parseLinks(html: string): AO3Link[] {
   const links: AO3Link[] = [];
-  const anchorRegex = /<a\b[^>]*\bhref=(["'])([^"']*)\1[^>]*>([\s\S]*?)<\/a>/gi;
+  const anchorRegex = /<a\b[^>]*\bhref=(["'])((?:(?!\1)[^])*)\1[^>]*>([\s\S]*?)<\/a>/gi;
   let anchor: RegExpExecArray | null;
   while ((anchor = anchorRegex.exec(html)) !== null) {
     const label = toText(anchor[3]);

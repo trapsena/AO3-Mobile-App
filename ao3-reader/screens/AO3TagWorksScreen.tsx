@@ -475,6 +475,10 @@ const AO3TagWorksScreen: React.FC<Props> = ({
   const listRef = useRef<any>(null);
 
   const tagId = useMemo(() => extractTagIdFromHref(tag.href), [tag.href]);
+  // The Search screen reuses this listing for its results (a /works/search
+  // address instead of a tag's): same cards and paging, but the filter panel
+  // below belongs to a tag's works, so it's left out.
+  const isSearch = /\/works\/search\b/i.test(tag.href || "");
 
   const [currentUrl, setCurrentUrl] = useState(() => tag.href || "");
   const [loading, setLoading] = useState(true);
@@ -589,9 +593,9 @@ const AO3TagWorksScreen: React.FC<Props> = ({
     onHeaderActionsChange?.({
       title: pageTitle || tag.label || "Works",
       onGoBack: () => onClose?.(),
-      onToggleFilters: handleToggleFilters,
+      onToggleFilters: isSearch ? undefined : handleToggleFilters,
     });
-  }, [pageTitle, tag.label, onClose, onHeaderActionsChange, handleToggleFilters]);
+  }, [pageTitle, tag.label, onClose, onHeaderActionsChange, handleToggleFilters, isSearch]);
 
   // Separate from the effect above so the "clear on unmount" cleanup doesn't
   // also fire (and briefly flicker the header) on every title update — this
@@ -643,10 +647,12 @@ const AO3TagWorksScreen: React.FC<Props> = ({
     () => (
       <View style={styles.emptyState}>
         <Text style={styles.emptyTitle}>No works found</Text>
-        <Text style={styles.emptyBody}>{`No works are tagged with "${tag.label}" yet.`}</Text>
+        <Text style={styles.emptyBody}>
+          {isSearch ? "No works matched your search." : `No works are tagged with "${tag.label}" yet.`}
+        </Text>
       </View>
     ),
-    [tag.label],
+    [tag.label, isSearch],
   );
 
   // Shared between ListHeaderComponent and ListFooterComponent — AO3's own
@@ -746,16 +752,18 @@ const AO3TagWorksScreen: React.FC<Props> = ({
         mixedContentMode="always"
       />
 
-      <AO3FilterPanel
-        visible={filterPanelVisible}
-        onClose={() => setFilterPanelVisible(false)}
-        kind="works"
-        facets={facets}
-        value={filterSelection}
-        onChange={setFilterSelection}
-        onApply={handleApplyFilters}
-        onClear={handleClearFilters}
-      />
+      {isSearch ? null : (
+        <AO3FilterPanel
+          visible={filterPanelVisible}
+          onClose={() => setFilterPanelVisible(false)}
+          kind="works"
+          facets={facets}
+          value={filterSelection}
+          onChange={setFilterSelection}
+          onApply={handleApplyFilters}
+          onClear={handleClearFilters}
+        />
+      )}
     </View>
   );
 };

@@ -51,6 +51,25 @@ export async function fetchTagAutocomplete(term: string): Promise<AO3TagSuggesti
   return fetchAutocomplete(`https://archiveofourown.org/autocomplete/tag?term=${encodeURIComponent(trimmed)}`, trimmed);
 }
 
+// The fields of AO3's search forms each name their own suggestion endpoint in
+// the input's data-autocomplete-method (e.g. "/autocomplete/fandom"); they all
+// answer in the same { id, name } shape as the tag endpoint above, so a fetcher
+// for any of them is just that path swapped in.
+export function createAutocompleteFetcher(method: string): (term: string) => Promise<AO3TagSuggestion[]> {
+  return async (term: string) => {
+    const trimmed = term.trim();
+    if (!trimmed) return [];
+    return fetchAutocomplete(`https://archiveofourown.org${method}?term=${encodeURIComponent(trimmed)}`, trimmed);
+  };
+}
+
+export const fetchFandomAutocomplete = createAutocompleteFetcher("/autocomplete/fandom");
+export const fetchCharacterAutocomplete = createAutocompleteFetcher("/autocomplete/character");
+export const fetchRelationshipAutocomplete = createAutocompleteFetcher("/autocomplete/relationship");
+export const fetchFreeformAutocomplete = createAutocompleteFetcher("/autocomplete/freeform");
+// People Search's Name field ("Pseud (account)" suggestions).
+export const fetchPseudAutocomplete = createAutocompleteFetcher("/autocomplete/pseud");
+
 // Same shape and same AJAX-only gating as the tag endpoint, just for the
 // "Add to collections" field on a bookmark's edit form, e.g.
 // https://archiveofourown.org/autocomplete/open_collection_names?term=asds

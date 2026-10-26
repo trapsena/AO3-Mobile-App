@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getUserIconUrl } from "../api/ao3Auth";
 import { ThemeColors, useTheme } from "../contexts/ThemeContext";
 import ThemeSettingsModal from "./ThemeSettingsModal";
+import { AO3_SEARCH_TYPES, AO3SearchType } from "../api/ao3Search";
 
 export type Ao3Tab =
   | "home"
@@ -31,7 +32,10 @@ export type Ao3Tab =
   | "fandoms"
   | "allFandoms"
   | "tagWorks"
-  | "downloads";
+  | "downloads"
+  | "search"
+  | "peopleResults"
+  | "tagResults";
 
 // Published by FanficReader (via onHeaderActionsChange) while the Reader tab
 // is active, so Ao3Header can render the fic/chapter title and the
@@ -111,7 +115,30 @@ export interface WorksHeaderInfo {
 export interface TagWorksHeaderInfo {
   title: string;
   onGoBack: () => void;
-  onToggleFilters: () => void;
+  // Omitted when the listing has no filter panel (search results), which
+  // hides the filter button.
+  onToggleFilters?: () => void;
+}
+
+// Published by AO3SearchScreen (via onHeaderActionsChange) while the Search tab
+// is active: which kind of search is showing, and how to switch to another —
+// the header shows the kind as its title and lists them in a ⋮ dropdown.
+export interface SearchHeaderInfo {
+  searchType: AO3SearchType;
+  onSelectSearchType: (type: AO3SearchType) => void;
+}
+
+// Published by AO3PeopleResultsScreen while it shows the results of a People
+// Search — reached by submitting that form, so the back button returns to it.
+export interface PeopleResultsHeaderInfo {
+  title: string;
+  onGoBack: () => void;
+}
+
+// Published by AO3TagResultsScreen while it shows the results of a Tag Search.
+export interface TagResultsHeaderInfo {
+  title: string;
+  onGoBack: () => void;
 }
 
 // Published by AO3AllFandomsScreen (via onHeaderActionsChange) while it's
@@ -162,6 +189,9 @@ interface Ao3HeaderProps {
   worksHeaderInfo?: WorksHeaderInfo | null;
   allFandomsHeaderInfo?: AllFandomsHeaderInfo | null;
   tagWorksHeaderInfo?: TagWorksHeaderInfo | null;
+  searchHeaderInfo?: SearchHeaderInfo | null;
+  peopleResultsHeaderInfo?: PeopleResultsHeaderInfo | null;
+  tagResultsHeaderInfo?: TagResultsHeaderInfo | null;
 }
 
 export const HEADER_CONTENT_HEIGHT = 52;
@@ -173,6 +203,7 @@ const NAV_ITEMS: { key: Ao3Tab; label: string; icon: keyof typeof Ionicons.glyph
   { key: "inbox", label: "Inbox", icon: "mail-outline" },
   { key: "bookmarks", label: "Bookmarks", icon: "bookmark-outline" },
   { key: "fandoms", label: "Fandoms", icon: "grid-outline" },
+  { key: "search", label: "Search", icon: "search-outline" },
   { key: "downloads", label: "Downloads", icon: "download-outline" },
 ];
 
@@ -191,6 +222,9 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
   worksHeaderInfo,
   allFandomsHeaderInfo,
   tagWorksHeaderInfo,
+  searchHeaderInfo,
+  peopleResultsHeaderInfo,
+  tagResultsHeaderInfo,
 }) => {
   const insets = useSafeAreaInsets();
   const headerHeight = HEADER_CONTENT_HEIGHT + insets.top;
@@ -206,6 +240,7 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   // The reader's own three-dot dropdown (Settings / Download), the same kind
   // of simple show-on-tap Modal as the profile one above.
+  const [searchMenuOpen, setSearchMenuOpen] = useState(false);
   const [readerMenuOpen, setReaderMenuOpen] = useState(false);
   const closeReaderMenu = () => setReaderMenuOpen(false);
   // The "Color Theme" drawer item's own picker — a separate Modal rendered
@@ -302,6 +337,10 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
       allFandomsHeaderInfo.onGoBack();
     } else if (activeTab === "tagWorks" && tagWorksHeaderInfo?.onGoBack) {
       tagWorksHeaderInfo.onGoBack();
+    } else if (activeTab === "peopleResults" && peopleResultsHeaderInfo?.onGoBack) {
+      peopleResultsHeaderInfo.onGoBack();
+    } else if (activeTab === "tagResults" && tagResultsHeaderInfo?.onGoBack) {
+      tagResultsHeaderInfo.onGoBack();
     } else {
       onNavigate("home");
     }
@@ -567,13 +606,17 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
             <Text style={styles.headerTitle} numberOfLines={1}>
               {tagWorksHeaderInfo.title || "Works"}
             </Text>
-            <TouchableOpacity
-              onPress={tagWorksHeaderInfo.onToggleFilters}
-              style={styles.avatarBtn}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Ionicons name="options-outline" size={22} color={colors.text} />
-            </TouchableOpacity>
+            {tagWorksHeaderInfo.onToggleFilters ? (
+              <TouchableOpacity
+                onPress={tagWorksHeaderInfo.onToggleFilters}
+                style={styles.avatarBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="options-outline" size={22} color={colors.text} />
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.avatarBtn} />
+            )}
           </>
         ) : activeTab === "profile" && profileHeaderInfo ? (
           <>
@@ -591,6 +634,33 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
             ) : (
               <View style={styles.avatarBtn} />
             )}
+          </>
+        ) : activeTab === "tagResults" && tagResultsHeaderInfo ? (
+          <>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {tagResultsHeaderInfo.title}
+            </Text>
+            <View style={styles.avatarBtn} />
+          </>
+        ) : activeTab === "peopleResults" && peopleResultsHeaderInfo ? (
+          <>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {peopleResultsHeaderInfo.title}
+            </Text>
+            <View style={styles.avatarBtn} />
+          </>
+        ) : activeTab === "search" && searchHeaderInfo ? (
+          <>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {AO3_SEARCH_TYPES.find((type) => type.key === searchHeaderInfo.searchType)?.label ?? "Search"}
+            </Text>
+            <TouchableOpacity
+              onPress={() => setSearchMenuOpen(true)}
+              style={styles.avatarBtn}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="ellipsis-vertical" size={20} color={colors.text} />
+            </TouchableOpacity>
           </>
         ) : activeTab === "allFandoms" && allFandomsHeaderInfo ? (
           <View style={styles.searchRow}>
@@ -727,6 +797,35 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
               </TouchableOpacity>
             </>
           ) : null}
+        </View>
+      </Modal>
+
+      <Modal
+        visible={searchMenuOpen && activeTab === "search" && !!searchHeaderInfo}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSearchMenuOpen(false)}
+      >
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => setSearchMenuOpen(false)} />
+        <View style={[styles.profileMenu, { top: headerHeight + 4 }]}>
+          {AO3_SEARCH_TYPES.map((type, i) => {
+            const active = searchHeaderInfo?.searchType === type.key;
+            return (
+              <React.Fragment key={type.key}>
+                {i > 0 ? <View style={styles.profileMenuDivider} /> : null}
+                <TouchableOpacity
+                  style={styles.profileMenuItem}
+                  onPress={() => {
+                    setSearchMenuOpen(false);
+                    searchHeaderInfo?.onSelectSearchType(type.key);
+                  }}
+                >
+                  <Ionicons name={active ? "radio-button-on" : "radio-button-off"} size={16} color={active ? colors.accent : colors.textMuted} />
+                  <Text style={[styles.profileMenuItemLabel, active && { color: colors.text, fontWeight: "700" }]}>{type.label}</Text>
+                </TouchableOpacity>
+              </React.Fragment>
+            );
+          })}
         </View>
       </Modal>
 

@@ -29,6 +29,9 @@ interface Props {
   // same chip + dropdown UI for a different field, e.g. a bookmark's "Add to
   // collections" list.
   fetchSuggestions?: (term: string) => Promise<AO3TagSuggestion[]>;
+  // Reports the text typed for the next tag but not committed yet, so a form
+  // that submits straight from a button press (a search) can still include it.
+  onDraftChange?: (draft: string) => void;
 }
 
 const splitTags = (value: string) =>
@@ -44,6 +47,7 @@ const TagAutocompleteInput: React.FC<Props> = ({
   placeholderTextColor,
   style,
   fetchSuggestions = fetchTagAutocomplete,
+  onDraftChange,
 }) => {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -57,6 +61,12 @@ const TagAutocompleteInput: React.FC<Props> = ({
   const [loading, setLoading] = useState(false);
 
   const chips = useMemo(() => splitTags(value), [value]);
+
+  const onDraftChangeRef = useRef(onDraftChange);
+  onDraftChangeRef.current = onDraftChange;
+  useEffect(() => {
+    onDraftChangeRef.current?.(draft);
+  }, [draft]);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const blurRef = useRef<ReturnType<typeof setTimeout> | null>(null);

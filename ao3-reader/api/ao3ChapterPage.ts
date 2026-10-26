@@ -35,7 +35,7 @@ function parseDownloads(html: string): ChapterPageDownload[] {
   const menu = html.match(/<li\b[^>]*\bclass=(["'])[^"']*\bdownload\b[^"']*\1[^>]*>([\s\S]*?)<\/ul>/i);
   if (!menu) return [];
   const downloads: ChapterPageDownload[] = [];
-  const anchorRegex = /<a\b[^>]*\bhref=(["'])([^"']*)\1[^>]*>([\s\S]*?)<\/a>/gi;
+  const anchorRegex = /<a\b[^>]*\bhref=(["'])((?:(?!\1)[^])*)\1[^>]*>([\s\S]*?)<\/a>/gi;
   let anchor: RegExpExecArray | null;
   while ((anchor = anchorRegex.exec(menu[2])) !== null) {
     const raw = decodeEntities(anchor[2]).trim();

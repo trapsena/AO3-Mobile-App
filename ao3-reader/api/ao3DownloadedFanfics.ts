@@ -16,7 +16,7 @@ import { decodeUtf8 } from "./htmlText";
 // limit. Bump the version when the parser starts producing different data: old
 // entries are then read again from their files.
 const KEY_PREFIX = "ao3_downloaded_fanfic_v1:";
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 
 // The title, tags and summary sit at the very top of the file, long before the
 // story text, so only this much of each (possibly multi-megabyte) file is read.
