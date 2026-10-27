@@ -19,6 +19,9 @@ import { fetchWithSession, getSessionCookie } from "../api/ao3Auth";
 import { parseChapterPage } from "../api/ao3ChapterPage";
 import type { ChapterPageDownload } from "../api/ao3ChapterPage";
 import { downloadFanfic, formatFileSize } from "../api/ao3Download";
+import { parseKudosForm, postKudos } from "../api/ao3Kudos";
+import type { AO3KudosForm } from "../api/ao3Kudos";
+import KudosButton from "../components/KudosButton";
 import { loadDownloadedWork, syncDownloadedFanfics } from "../api/ao3DownloadedFanfics";
 import { parseLocalWorkUrl, toLocalWorkUrl } from "../api/ao3DownloadedWork";
 import type { DownloadedWork } from "../api/ao3DownloadedWork";
@@ -383,6 +386,14 @@ const FanficReader: React.FC<Props> = ({
   const [isDownloading, setIsDownloading] = useState(false);
   const htmlDownload = downloads.find((d) => d.format.toLowerCase() === "html");
 
+  // Kudos: the "Kudos ♥" form read off the chapter page (absent when signed out,
+  // on your own work, or for a downloaded file), whether the end of the chapter
+  // is on screen, and the state of the button that posts it.
+  const [kudosForm, setKudosForm] = useState<AO3KudosForm | null>(null);
+  const [atChapterEnd, setAtChapterEnd] = useState(false);
+  const [kudosGiven, setKudosGiven] = useState(false);
+  const [kudosSubmitting, setKudosSubmitting] = useState(false);
+
   // A small message that fades in near the bottom and out again by itself,
   // for confirmations that don't need a tap to dismiss (a finished download).
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -551,6 +562,7 @@ const FanficReader: React.FC<Props> = ({
     (async () => {
       chapterFromFetchRef.current = false;
       setLoading(true);
+      setAtChapterEnd(false);
       setContentHtml("");
       setRawContentHtml("");
 
@@ -573,6 +585,7 @@ const FanficReader: React.FC<Props> = ({
             if (page.chapterTitle) setChapterTitle(page.chapterTitle);
             if (page.links.length > 0) setChapterLinks(page.links);
             if (page.downloads.length > 0) setDownloads(page.downloads);
+            setKudosForm(parseKudosForm(html));
 
             setRawContentHtml(inner);
             setContentHtml(`<div style="color:#fff; line-height:1.6;">${inner}</div>`);
@@ -747,6 +760,20 @@ const FanficReader: React.FC<Props> = ({
     }
   };
 
+  // Posts kudos for the work and tells the person how it went in the toast, in
+  // AO3's own words. Both a fresh kudos and "you already left kudos" fill the heart.
+  const handleKudos = async () => {
+    if (!kudosForm || kudosSubmitting) return;
+    setKudosSubmitting(true);
+    try {
+      const result = await postKudos(kudosForm, chapterLinks[index]?.href ?? currentUrl);
+      if (result.ok || result.alreadyGiven) setKudosGiven(true);
+      showToast(result.message);
+    } finally {
+      setKudosSubmitting(false);
+    }
+  };
+
   // Publish this screen's title/TTS state (and a way to reach the settings
   // modal / comments drawer this component still owns via ReaderHeader's
   // ref) so the app's global Ao3Header can render them. Cleared on unmount
@@ -880,6 +907,7 @@ const FanficReader: React.FC<Props> = ({
         currentIndex={currentTtsIndex}
         ttsActive={ttsVisible}
         onOpenWork={handleOpenWork}
+        onReachEnd={setAtChapterEnd}
         onParagraphPress={(i) => {
           // Only jump the TTS position when its controls are already open —
           // tapping a paragraph while they're closed no longer opens them.
@@ -902,9 +930,21 @@ const FanficReader: React.FC<Props> = ({
         <ChapterControls index={index} total={chapterLinks.length || 0} onPrev={goPrev} onNext={goNext} />
       )}
 
+      {/* Kudos: only for an online fic that offers the form, once the end of the chapter is reached. */}
+      <KudosButton
+        visible={!!kudosForm && !localFile && atChapterEnd && !ttsVisible && !loading}
+        given={kudosGiven}
+        submitting={kudosSubmitting}
+        onPress={handleKudos}
+        bottom={72}
+      />
+
       {/* Brief confirmation (e.g. a finished download); sits just above the bottom controls and ignores touches. */}
       {toastMessage ? (
-        <Animated.View pointerEvents="none" style={[styles.toast, { opacity: toastOpacity }]}>
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.toast, kudosForm && atChapterEnd && { bottom: 140 }, { opacity: toastOpacity }]}
+        >
           <Text style={styles.toastText} numberOfLines={2}>
             {toastMessage}
           </Text>

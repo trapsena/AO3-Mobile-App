@@ -47,6 +47,9 @@ interface Props {
   // points at an AO3 work (/works/<id>, optionally /chapters/<id>). Such taps
   // are swallowed here instead of navigating this WebView away from the chapter.
   onOpenWork?: (url: string) => void;
+  // Told whether the end of the chapter is on screen (true) or not (false), so a
+  // parent can show something only once the person has reached the end.
+  onReachEnd?: (atEnd: boolean) => void;
 }
 
 // Relative (/works/1), protocol-relative and AO3-mirror hrefs all become the
@@ -71,6 +74,7 @@ const ChapterView: React.FC<Props> = ({
   ttsActive = false,
   fontFamily = "system",
   onOpenWork,
+  onReachEnd,
 }) => {
   const { colors } = useTheme();
   const webRef = useRef<any>(null);
@@ -189,6 +193,29 @@ const ChapterView: React.FC<Props> = ({
           }catch(e){}
         }, true);
 
+        // Reports when the bottom of the chapter comes into view (or leaves it).
+        // Checked on scroll, once the page and its pictures have loaded (they
+        // change its height), and after a short wait for chapters that fit on
+        // one screen. Only a change is sent.
+        (function(){
+          var lastEnd = null;
+          function reportEnd(){
+            try{
+              var b = document.body;
+              var atEnd = b.scrollHeight - b.scrollTop - b.clientHeight < 160;
+              if (atEnd !== lastEnd) {
+                lastEnd = atEnd;
+                window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'end', atEnd: atEnd }));
+              }
+            }catch(e){}
+          }
+          document.body.addEventListener('scroll', reportEnd, { passive: true });
+          window.addEventListener('load', reportEnd);
+          document.addEventListener('load', reportEnd, true);
+          setTimeout(reportEnd, 400);
+          setTimeout(reportEnd, 1500);
+        })();
+
         bindClicks();
         // rebind after dynamic changes
         new MutationObserver(bindClicks).observe(document.body, { childList: true, subtree: true });
@@ -259,6 +286,8 @@ const ChapterView: React.FC<Props> = ({
               onParagraphPress(data.index);
             } else if (data.type === 'scroll' && typeof onScroll === 'function') {
               onScroll(data.y);
+            } else if (data.type === 'end' && typeof onReachEnd === 'function') {
+              onReachEnd(!!data.atEnd);
             } else if (data.type === 'openWork' && typeof data.href === 'string' && typeof onOpenWork === 'function') {
               onOpenWork(toAo3WorkUrl(data.href));
             }

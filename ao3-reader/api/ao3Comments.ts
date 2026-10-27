@@ -24,12 +24,12 @@ const decodeHtmlAttribute = (value?: string | null) =>
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-const getAttr = (html: string, name: string) => {
+export const getAttr = (html: string, name: string) => {
   const match = html.match(new RegExp(`\\b${escapeRegExp(name)}=["']([^"']*)["']`, "i"));
   return match ? decodeHtmlAttribute(match[1]) : undefined;
 };
 
-const getInputValue = (formHtml: string, name: string) => {
+export const getInputValue = (formHtml: string, name: string) => {
   const inputMatch = formHtml.match(
     new RegExp(`<input\\b(?=[^>]*\\bname=["']${escapeRegExp(name)}["'])[^>]*>`, "i"),
   );
