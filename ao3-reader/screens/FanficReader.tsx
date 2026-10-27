@@ -22,6 +22,8 @@ import { downloadFanfic, formatFileSize } from "../api/ao3Download";
 import { parseKudosForm, postKudos } from "../api/ao3Kudos";
 import type { AO3KudosForm } from "../api/ao3Kudos";
 import KudosButton from "../components/KudosButton";
+import { parseMarkForm, postMark } from "../api/ao3MarkForLater";
+import type { AO3MarkForm } from "../api/ao3MarkForLater";
 import { loadDownloadedWork, syncDownloadedFanfics } from "../api/ao3DownloadedFanfics";
 import { parseLocalWorkUrl, toLocalWorkUrl } from "../api/ao3DownloadedWork";
 import type { DownloadedWork } from "../api/ao3DownloadedWork";
@@ -394,6 +396,11 @@ const FanficReader: React.FC<Props> = ({
   const [kudosGiven, setKudosGiven] = useState(false);
   const [kudosSubmitting, setKudosSubmitting] = useState(false);
 
+  // Marked for Later: the form read off the chapter page says which of "Mark for
+  // Later" / "Mark as Read" AO3 is offering (so which state the work is in).
+  const [markForm, setMarkForm] = useState<AO3MarkForm | null>(null);
+  const [markBusy, setMarkBusy] = useState(false);
+
   // A small message that fades in near the bottom and out again by itself,
   // for confirmations that don't need a tap to dismiss (a finished download).
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -586,6 +593,7 @@ const FanficReader: React.FC<Props> = ({
             if (page.links.length > 0) setChapterLinks(page.links);
             if (page.downloads.length > 0) setDownloads(page.downloads);
             setKudosForm(parseKudosForm(html));
+            setMarkForm(parseMarkForm(html));
 
             setRawContentHtml(inner);
             setContentHtml(`<div style="color:#fff; line-height:1.6;">${inner}</div>`);
@@ -774,6 +782,20 @@ const FanficReader: React.FC<Props> = ({
     }
   };
 
+  // Adds the work to (or takes it off) Marked for Later and says so in the toast,
+  // in AO3's own words; the menu entry then flips to match.
+  const handleMarkForLater = async () => {
+    if (!markForm || markBusy) return;
+    setMarkBusy(true);
+    try {
+      const result = await postMark(markForm, chapterLinks[index]?.href ?? currentUrl);
+      if (result.ok && result.form) setMarkForm(result.form);
+      showToast(result.message);
+    } finally {
+      setMarkBusy(false);
+    }
+  };
+
   // Publish this screen's title/TTS state (and a way to reach the settings
   // modal / comments drawer this component still owns via ReaderHeader's
   // ref) so the app's global Ao3Header can render them. Cleared on unmount
@@ -792,6 +814,7 @@ const FanficReader: React.FC<Props> = ({
       canDownload: !!htmlDownload,
       onDownload: handleDownload,
       isDownloading,
+      markForLater: markForm && !localFile ? { marked: markForm.marked, busy: markBusy, onToggle: handleMarkForLater } : null,
       onGoBack: handleClose,
     });
     // handleClose isn't memoized, so its dependencies (everything it reads —
@@ -800,7 +823,7 @@ const FanficReader: React.FC<Props> = ({
     // stale between title/chapterTitle changes (e.g. after just tapping a
     // paragraph to move currentTtsIndex, without a new chapter loading).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, chapterTitle, ttsVisible, currentUrl, index, currentTtsIndex, initialUrl, onClose, onHeaderActionsChange, downloads, isDownloading]);
+  }, [title, chapterTitle, ttsVisible, currentUrl, index, currentTtsIndex, initialUrl, onClose, onHeaderActionsChange, downloads, isDownloading, markForm, markBusy]);
 
   // Separate from the effect above so the "clear on unmount" cleanup doesn't
   // also fire (and briefly flicker the header) on every title/TTS update —

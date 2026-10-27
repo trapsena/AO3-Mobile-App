@@ -55,6 +55,10 @@ export interface ReaderHeaderInfo {
   // version); when false the dropdown's Download entry is hidden.
   canDownload: boolean;
   onDownload: () => void;
+  // The Marked for Later action for this work, read off its AO3 page: absent when
+  // the page offers none (downloads, signed out). `marked` is whether the work is
+  // on the list now, so the entry reads "Mark as Read" (true) or "Mark for Later".
+  markForLater?: { marked: boolean; busy: boolean; onToggle: () => void } | null;
   // True while the download is running; the Download entry is disabled meanwhile.
   isDownloading: boolean;
   // Called instead of the generic "go back to Home" fallback, so the screen
@@ -793,6 +797,33 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
                 <Ionicons name="download-outline" size={16} color={colors.textMuted} />
                 <Text style={styles.profileMenuItemLabel}>
                   {readerHeaderInfo.isDownloading ? "Downloading…" : "Download"}
+                </Text>
+              </TouchableOpacity>
+            </>
+          ) : null}
+
+          {readerHeaderInfo?.markForLater ? (
+            <>
+              <View style={styles.profileMenuDivider} />
+              <TouchableOpacity
+                style={styles.profileMenuItem}
+                disabled={readerHeaderInfo.markForLater.busy}
+                onPress={() => {
+                  closeReaderMenu();
+                  readerHeaderInfo.markForLater?.onToggle();
+                }}
+              >
+                <Ionicons
+                  name={readerHeaderInfo.markForLater.marked ? "checkmark-done-outline" : "bookmark-outline"}
+                  size={16}
+                  color={colors.textMuted}
+                />
+                <Text style={styles.profileMenuItemLabel}>
+                  {readerHeaderInfo.markForLater.busy
+                    ? "Updating…"
+                    : readerHeaderInfo.markForLater.marked
+                      ? "Mark as Read"
+                      : "Mark for Later"}
                 </Text>
               </TouchableOpacity>
             </>
