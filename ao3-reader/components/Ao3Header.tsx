@@ -59,6 +59,9 @@ export interface ReaderHeaderInfo {
   // the page offers none (downloads, signed out). `marked` is whether the work is
   // on the list now, so the entry reads "Mark as Read" (true) or "Mark for Later".
   markForLater?: { marked: boolean; busy: boolean; onToggle: () => void } | null;
+  // Leaves kudos on the work, the same as the heart button at the end of a
+  // chapter; absent when the page has no kudos form. `given` fills the heart.
+  kudos?: { given: boolean; busy: boolean; onPress: () => void } | null;
   // True while the download is running; the Download entry is disabled meanwhile.
   isDownloading: boolean;
   // Called instead of the generic "go back to Home" fallback, so the screen
@@ -825,6 +828,27 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
                       ? "Mark as Read"
                       : "Mark for Later"}
                 </Text>
+              </TouchableOpacity>
+            </>
+          ) : null}
+
+          {readerHeaderInfo?.kudos ? (
+            <>
+              <View style={styles.profileMenuDivider} />
+              <TouchableOpacity
+                style={styles.profileMenuItem}
+                disabled={readerHeaderInfo.kudos.busy}
+                onPress={() => {
+                  closeReaderMenu();
+                  readerHeaderInfo.kudos?.onPress();
+                }}
+              >
+                <Ionicons
+                  name={readerHeaderInfo.kudos.given ? "heart" : "heart-outline"}
+                  size={16}
+                  color={readerHeaderInfo.kudos.given ? colors.accent : colors.textMuted}
+                />
+                <Text style={styles.profileMenuItemLabel}>{readerHeaderInfo.kudos.busy ? "Sending…" : "Kudos"}</Text>
               </TouchableOpacity>
             </>
           ) : null}

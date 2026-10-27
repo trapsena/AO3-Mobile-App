@@ -814,6 +814,7 @@ const FanficReader: React.FC<Props> = ({
       canDownload: !!htmlDownload,
       onDownload: handleDownload,
       isDownloading,
+      kudos: kudosForm && !localFile ? { given: kudosGiven, busy: kudosSubmitting, onPress: handleKudos } : null,
       markForLater: markForm && !localFile ? { marked: markForm.marked, busy: markBusy, onToggle: handleMarkForLater } : null,
       onGoBack: handleClose,
     });
@@ -823,7 +824,7 @@ const FanficReader: React.FC<Props> = ({
     // stale between title/chapterTitle changes (e.g. after just tapping a
     // paragraph to move currentTtsIndex, without a new chapter loading).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, chapterTitle, ttsVisible, currentUrl, index, currentTtsIndex, initialUrl, onClose, onHeaderActionsChange, downloads, isDownloading, markForm, markBusy]);
+  }, [title, chapterTitle, ttsVisible, currentUrl, index, currentTtsIndex, initialUrl, onClose, onHeaderActionsChange, downloads, isDownloading, markForm, markBusy, kudosForm, kudosGiven, kudosSubmitting]);
 
   // Separate from the effect above so the "clear on unmount" cleanup doesn't
   // also fire (and briefly flicker the header) on every title/TTS update —
