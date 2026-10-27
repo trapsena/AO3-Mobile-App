@@ -26,16 +26,30 @@ import { ThemeColors, useTheme } from "../contexts/ThemeContext";
 interface Props {
   visible: boolean;
   editHref: string | null;
+  // A form already read off a page (the reader has the work's own), used instead
+  // of fetching one from `editHref`: either a new bookmark's or an existing one's.
+  initialForm?: AO3BookmarkEditForm | null;
+  // Overrides the heading ("Save a bookmark" by default).
+  title?: string;
   // The page the bookmark action is being performed from, sent as the
   // submit request's Referer — matching how the rest of this app's AO3
   // write requests (replies, subscriptions, ...) identify their origin page.
   refererUrl: string;
   onClose: () => void;
-  // Called after a successful save so the screen can refresh its list.
-  onSaved: () => void;
+  // Called after a successful save so the screen can refresh its list; AO3's
+  // own confirmation text comes along when it gave one.
+  onSaved: (message?: string) => void;
 }
 
-const BookmarkEditModal: React.FC<Props> = ({ visible, editHref, refererUrl, onClose, onSaved }) => {
+const BookmarkEditModal: React.FC<Props> = ({
+  visible,
+  editHref,
+  initialForm,
+  title = "Save a bookmark",
+  refererUrl,
+  onClose,
+  onSaved,
+}) => {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [loading, setLoading] = useState(false);
@@ -50,7 +64,20 @@ const BookmarkEditModal: React.FC<Props> = ({ visible, editHref, refererUrl, onC
   const [isRec, setIsRec] = useState(false);
 
   useEffect(() => {
-    if (!visible || !editHref) return;
+    if (!visible) return;
+
+    if (initialForm) {
+      setLoading(false);
+      setLoadError(null);
+      setForm(initialForm);
+      setNotes(initialForm.notes);
+      setTagString(initialForm.tagString);
+      setCollectionNames(initialForm.collectionNames);
+      setIsPrivate(initialForm.isPrivate);
+      setIsRec(initialForm.isRec);
+      return;
+    }
+    if (!editHref) return;
 
     setLoading(true);
     setLoadError(null);
@@ -74,7 +101,7 @@ const BookmarkEditModal: React.FC<Props> = ({ visible, editHref, refererUrl, onC
         setLoadError("Couldn't load the bookmark's edit form. Please try again.");
       })
       .finally(() => setLoading(false));
-  }, [visible, editHref]);
+  }, [visible, editHref, initialForm]);
 
   const handleSave = useCallback(() => {
     if (!form) return;
@@ -82,7 +109,9 @@ const BookmarkEditModal: React.FC<Props> = ({ visible, editHref, refererUrl, onC
     submitBookmarkEdit(form, { notes, tagString, collectionNames, isPrivate, isRec }, refererUrl)
       .then((result) => {
         if (result.ok) {
-          onSaved();
+          onSaved(result.message);
+        } else if (result.reason === "rejected") {
+          Alert.alert("AO3 didn't save the bookmark", result.message ?? "It was refused.");
         } else if (result.reason === "auth") {
           Alert.alert("Couldn't save bookmark", "AO3 may have signed you out. Try reloading and signing in again.");
         } else if (result.reason === "token") {
@@ -112,7 +141,7 @@ const BookmarkEditModal: React.FC<Props> = ({ visible, editHref, refererUrl, onC
         >
           <View style={styles.card}>
             <View style={styles.header}>
-              <Text style={styles.headerTitle}>Save a bookmark</Text>
+              <Text style={styles.headerTitle}>{title}</Text>
               <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Ionicons name="close" size={22} color={colors.text} />
               </TouchableOpacity>

@@ -62,6 +62,10 @@ export interface ReaderHeaderInfo {
   // Leaves kudos on the work, the same as the heart button at the end of a
   // chapter; absent when the page has no kudos form. `given` fills the heart.
   kudos?: { given: boolean; busy: boolean; onPress: () => void } | null;
+  // Opens the bookmark form for this work: "Bookmark" to save a new one, or
+  // "Edit Bookmark" (`exists`) when it's already bookmarked. Absent when the
+  // page has no bookmark form (downloads, signed out).
+  bookmark?: { exists: boolean; onPress: () => void } | null;
   // True while the download is running; the Download entry is disabled meanwhile.
   isDownloading: boolean;
   // Called instead of the generic "go back to Home" fallback, so the screen
@@ -827,6 +831,28 @@ const Ao3Header: React.FC<Ao3HeaderProps> = ({
                     : readerHeaderInfo.markForLater.marked
                       ? "Mark as Read"
                       : "Mark for Later"}
+                </Text>
+              </TouchableOpacity>
+            </>
+          ) : null}
+
+          {readerHeaderInfo?.bookmark ? (
+            <>
+              <View style={styles.profileMenuDivider} />
+              <TouchableOpacity
+                style={styles.profileMenuItem}
+                onPress={() => {
+                  closeReaderMenu();
+                  readerHeaderInfo.bookmark?.onPress();
+                }}
+              >
+                <Ionicons
+                  name={readerHeaderInfo.bookmark.exists ? "create-outline" : "bookmarks-outline"}
+                  size={16}
+                  color={readerHeaderInfo.bookmark.exists ? colors.accent : colors.textMuted}
+                />
+                <Text style={styles.profileMenuItemLabel}>
+                  {readerHeaderInfo.bookmark.exists ? "Edit Bookmark" : "Bookmark"}
                 </Text>
               </TouchableOpacity>
             </>

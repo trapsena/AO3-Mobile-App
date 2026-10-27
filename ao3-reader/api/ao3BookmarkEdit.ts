@@ -8,7 +8,10 @@ import { fetchWithSession } from "./ao3Auth";
 
 export interface AO3BookmarkEditForm {
   actionUrl: string;
+  // The hidden _method ("put" when editing); empty for a new bookmark, which is a plain post.
   method: string;
+  // True for the "save a bookmark!" form, false when editing an existing bookmark.
+  isNew: boolean;
   authenticityToken: string;
   pseudId?: string;
   notes: string;
@@ -96,48 +99,77 @@ export async function fetchBookmarkEditForm(editHref: string): Promise<AO3Bookma
       console.warn("[ao3BookmarkEdit] No <form> found in edit response");
       return null;
     }
-    const formHtml = formMatch[0];
-
-    const actionUrl = toAbsoluteAO3Url(getAttr(formHtml, "action"));
-    const authenticityToken = getInputValue(formHtml, "authenticity_token");
-    if (!actionUrl || !authenticityToken) {
-      console.warn("[ao3BookmarkEdit] Edit form missing action or token", {
-        actionUrl,
-        hasToken: !!authenticityToken,
-      });
-      return null;
-    }
-
-    const method = getInputValue(formHtml, "_method") || "put";
-    const pseudId = getInputValue(formHtml, "bookmark[pseud_id]");
-    const notes = getTextareaValue(formHtml, "bookmark[bookmarker_notes]");
-    const tagString = getInputValue(formHtml, "bookmark[tag_string]") || "";
-    const collectionNames = getInputValue(formHtml, "bookmark[collection_names]") || "";
-    const isPrivate = getCheckboxChecked(formHtml, "bookmark[private]");
-    const isRec = getCheckboxChecked(formHtml, "bookmark[rec]");
-
-    const submitMatch = formHtml.match(/<input\b(?=[^>]*\btype=["']submit["'])[^>]*>/i);
-    const commitLabel = (submitMatch ? getAttr(submitMatch[0], "value") : undefined) || "Update";
-
-    return {
-      actionUrl,
-      method,
-      authenticityToken,
-      pseudId,
-      notes,
-      tagString,
-      collectionNames,
-      isPrivate,
-      isRec,
-      commitLabel,
-    };
+    return readBookmarkForm(formMatch[0]);
   } catch (err) {
     console.warn("[ao3BookmarkEdit] Could not fetch edit form:", err);
     return null;
   }
 }
 
-export type AO3SubmitBookmarkResult = { ok: true } | { ok: false; reason: "auth" | "token" | "unknown"; status?: number };
+// Reads a bookmark form — the "save a bookmark!" one (posts to
+// /works/<id>/bookmarks) or the edit one (/bookmarks/<id>, with _method=put) —
+// into its values, as AO3 rendered them (an edit form arrives filled in).
+function readBookmarkForm(formHtml: string): AO3BookmarkEditForm | null {
+  const actionUrl = toAbsoluteAO3Url(getAttr(formHtml, "action"));
+  const authenticityToken = getInputValue(formHtml, "authenticity_token");
+  if (!actionUrl || !authenticityToken) {
+    console.warn("[ao3BookmarkEdit] Bookmark form missing action or token", {
+      actionUrl,
+      hasToken: !!authenticityToken,
+    });
+    return null;
+  }
+
+  // Only an existing bookmark's address ends /bookmarks/<its id>.
+  const isNew = !/\/bookmarks\/\d+\/?$/.test(actionUrl);
+  const method = getInputValue(formHtml, "_method") || (isNew ? "" : "put");
+  const pseudId = getInputValue(formHtml, "bookmark[pseud_id]");
+  const notes = getTextareaValue(formHtml, "bookmark[bookmarker_notes]");
+  const tagString = getInputValue(formHtml, "bookmark[tag_string]") || "";
+  const collectionNames = getInputValue(formHtml, "bookmark[collection_names]") || "";
+  const isPrivate = getCheckboxChecked(formHtml, "bookmark[private]");
+  const isRec = getCheckboxChecked(formHtml, "bookmark[rec]");
+
+  const submitMatch = formHtml.match(/<input\b(?=[^>]*\btype=["']submit["'])[^>]*>/i);
+  const commitLabel = (submitMatch ? getAttr(submitMatch[0], "value") : undefined) || (isNew ? "Create" : "Update");
+
+  return {
+    actionUrl,
+    method,
+    isNew,
+    authenticityToken,
+    pseudId,
+    notes,
+    tagString,
+    collectionNames,
+    isPrivate,
+    isRec,
+    commitLabel,
+  };
+}
+
+// The bookmark form on a work or chapter page — "save a bookmark!" when the work
+// isn't bookmarked yet, the filled-in edit form when it is. Null when the page
+// has none (signed out).
+export function parseBookmarkForm(html: string): AO3BookmarkEditForm | null {
+  const forms = html.match(/<form\b[\s\S]*?<\/form>/gi) ?? [];
+  const formHtml = forms.find((form) => /\bname=["']bookmark\[bookmarker_notes\]["']/i.test(form));
+  return formHtml ? readBookmarkForm(formHtml) : null;
+}
+
+export type AO3SubmitBookmarkResult =
+  | { ok: true; message?: string }
+  | { ok: false; reason: "auth" | "token" | "rejected" | "unknown"; message?: string; status?: number };
+
+// AO3's flash message (<div class="flash notice|error">) on the page a submit lands on.
+const flashText = (html: string, kind: "notice" | "error"): string | undefined => {
+  const pattern = kind === "error"
+    ? /<div\b[^>]*\bclass=["']flash[^"']*\berror\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i
+    : /<div\b[^>]*\bclass=["']flash[^"']*\bnotice\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i;
+  const match = html.match(pattern);
+  const text = match ? decodeHtmlAttribute(match[1].replace(/<[^>]+>/g, "")).replace(/\s+/g, " ").trim() : "";
+  return text || undefined;
+};
 
 export async function submitBookmarkEdit(
   form: AO3BookmarkEditForm,
@@ -145,7 +177,7 @@ export async function submitBookmarkEdit(
   referer: string,
 ): Promise<AO3SubmitBookmarkResult> {
   const body = new URLSearchParams();
-  body.append("_method", form.method);
+  if (form.method) body.append("_method", form.method);
   body.append("authenticity_token", form.authenticityToken);
   if (form.pseudId) body.append("bookmark[pseud_id]", form.pseudId);
   body.append("bookmark[bookmarker_notes]", values.notes);
@@ -156,17 +188,33 @@ export async function submitBookmarkEdit(
   body.append("commit", form.commitLabel);
 
   try {
+    // A new bookmark is posted the way the page's own form does it (a plain form
+    // post, answered with a redirect to the bookmark); an edit keeps the AJAX
+    // call it has always used.
     const res = await fetchWithSession(form.actionUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "text/javascript, text/html, application/xhtml+xml, application/xml;q=0.9, */*;q=0.8",
-        "X-Requested-With": "XMLHttpRequest",
-        Referer: referer,
-      },
+      headers: form.isNew
+        ? {
+            "Content-Type": "application/x-www-form-urlencoded",
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            Referer: referer,
+          }
+        : {
+            "Content-Type": "application/x-www-form-urlencoded",
+            Accept: "text/javascript, text/html, application/xhtml+xml, application/xml;q=0.9, */*;q=0.8",
+            "X-Requested-With": "XMLHttpRequest",
+            Referer: referer,
+          },
       body: body.toString(),
     });
 
+    if (res.ok && form.isNew) {
+      if (/\/users\/login\b/.test(res.url || "")) return { ok: false, reason: "auth", status: res.status };
+      const html = await res.text();
+      const error = flashText(html, "error");
+      if (error) return { ok: false, reason: "rejected", message: error };
+      return { ok: true, message: flashText(html, "notice") };
+    }
     if (res.ok) return { ok: true };
     if (res.status === 401 || res.status === 403) return { ok: false, reason: "auth", status: res.status };
     if (res.status === 422) return { ok: false, reason: "token", status: res.status };

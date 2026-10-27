@@ -22,6 +22,9 @@ import { downloadFanfic, formatFileSize } from "../api/ao3Download";
 import { parseKudosForm, postKudos } from "../api/ao3Kudos";
 import type { AO3KudosForm } from "../api/ao3Kudos";
 import KudosButton from "../components/KudosButton";
+import BookmarkEditModal from "../components/BookmarkEditModal";
+import { parseBookmarkForm } from "../api/ao3BookmarkEdit";
+import type { AO3BookmarkEditForm } from "../api/ao3BookmarkEdit";
 import { parseMarkForm, postMark } from "../api/ao3MarkForLater";
 import type { AO3MarkForm } from "../api/ao3MarkForLater";
 import { loadDownloadedWork, syncDownloadedFanfics } from "../api/ao3DownloadedFanfics";
@@ -401,6 +404,13 @@ const FanficReader: React.FC<Props> = ({
   const [markForm, setMarkForm] = useState<AO3MarkForm | null>(null);
   const [markBusy, setMarkBusy] = useState(false);
 
+  // Bookmark: the work page's own bookmark form — "save a bookmark!" when it
+  // isn't bookmarked, the filled-in edit form when it is — and whether the modal
+  // for it is open. It is read again after a save, so the menu flips between
+  // "Bookmark" and "Edit Bookmark" and the edit form points at the new bookmark.
+  const [bookmarkForm, setBookmarkForm] = useState<AO3BookmarkEditForm | null>(null);
+  const [bookmarkOpen, setBookmarkOpen] = useState(false);
+
   // A small message that fades in near the bottom and out again by itself,
   // for confirmations that don't need a tap to dismiss (a finished download).
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -594,6 +604,7 @@ const FanficReader: React.FC<Props> = ({
             if (page.downloads.length > 0) setDownloads(page.downloads);
             setKudosForm(parseKudosForm(html));
             setMarkForm(parseMarkForm(html));
+            setBookmarkForm(parseBookmarkForm(html));
 
             setRawContentHtml(inner);
             setContentHtml(`<div style="color:#fff; line-height:1.6;">${inner}</div>`);
@@ -796,6 +807,22 @@ const FanficReader: React.FC<Props> = ({
     }
   };
 
+  // After the bookmark modal saves: confirm in the toast with AO3's own words and
+  // read the chapter page again for the form as it is now.
+  const handleBookmarkSaved = async (message?: string) => {
+    setBookmarkOpen(false);
+    showToast(message || (bookmarkForm?.isNew ? "Bookmark created." : "Bookmark updated."));
+    try {
+      const res = await fetchWithSession(chapterLinks[index]?.href ?? currentUrl);
+      if (res.ok) {
+        const next = parseBookmarkForm(await res.text());
+        if (next) setBookmarkForm(next);
+      }
+    } catch (err) {
+      console.warn("[FanficReader] Could not refresh the bookmark form:", err);
+    }
+  };
+
   // Publish this screen's title/TTS state (and a way to reach the settings
   // modal / comments drawer this component still owns via ReaderHeader's
   // ref) so the app's global Ao3Header can render them. Cleared on unmount
@@ -814,6 +841,7 @@ const FanficReader: React.FC<Props> = ({
       canDownload: !!htmlDownload,
       onDownload: handleDownload,
       isDownloading,
+      bookmark: bookmarkForm && !localFile ? { exists: !bookmarkForm.isNew, onPress: () => setBookmarkOpen(true) } : null,
       kudos: kudosForm && !localFile ? { given: kudosGiven, busy: kudosSubmitting, onPress: handleKudos } : null,
       markForLater: markForm && !localFile ? { marked: markForm.marked, busy: markBusy, onToggle: handleMarkForLater } : null,
       onGoBack: handleClose,
@@ -824,7 +852,7 @@ const FanficReader: React.FC<Props> = ({
     // stale between title/chapterTitle changes (e.g. after just tapping a
     // paragraph to move currentTtsIndex, without a new chapter loading).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, chapterTitle, ttsVisible, currentUrl, index, currentTtsIndex, initialUrl, onClose, onHeaderActionsChange, downloads, isDownloading, markForm, markBusy, kudosForm, kudosGiven, kudosSubmitting]);
+  }, [title, chapterTitle, ttsVisible, currentUrl, index, currentTtsIndex, initialUrl, onClose, onHeaderActionsChange, downloads, isDownloading, markForm, markBusy, kudosForm, kudosGiven, kudosSubmitting, bookmarkForm]);
 
   // Separate from the effect above so the "clear on unmount" cleanup doesn't
   // also fire (and briefly flicker the header) on every title/TTS update —
@@ -953,6 +981,16 @@ const FanficReader: React.FC<Props> = ({
       ) : (
         <ChapterControls index={index} total={chapterLinks.length || 0} onPrev={goPrev} onNext={goNext} />
       )}
+
+      <BookmarkEditModal
+        visible={bookmarkOpen}
+        editHref={null}
+        initialForm={bookmarkForm}
+        title={bookmarkForm?.isNew === false ? "Edit bookmark" : "Save a bookmark"}
+        refererUrl={chapterLinks[index]?.href ?? currentUrl}
+        onClose={() => setBookmarkOpen(false)}
+        onSaved={handleBookmarkSaved}
+      />
 
       {/* Kudos: only for an online fic that offers the form, once the end of the chapter is reached. */}
       <KudosButton
